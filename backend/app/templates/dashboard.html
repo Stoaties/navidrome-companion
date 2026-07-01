@@ -29,7 +29,7 @@
 <h2>Recent jobs</h2>
 <table class="jobs" id="jobs">
   <thead>
-    <tr><th>Type</th><th>Target</th><th>Status</th><th></th></tr>
+    <tr><th>Type</th><th>Target</th><th>Status</th><th>Actions</th><th></th></tr>
   </thead>
   <tbody>
     {% for job in jobs %}
@@ -37,13 +37,14 @@
       <td>{{ job.kind }}</td>
       <td class="target">{{ job.target }}</td>
       <td><span class="status {{ job.status }}">{{ job.status }}</span></td>
+      <td class="actions"></td>
       <td><a href="#" class="toggle-log">log</a></td>
     </tr>
     <tr class="logrow" data-log-for="{{ job.id }}" hidden>
-      <td colspan="4"><pre class="log"></pre></td>
+      <td colspan="5"><pre class="log"></pre></td>
     </tr>
     {% else %}
-    <tr><td colspan="4" class="muted">No downloads yet.</td></tr>
+    <tr><td colspan="5" class="muted">No downloads yet.</td></tr>
     {% endfor %}
   </tbody>
 </table>

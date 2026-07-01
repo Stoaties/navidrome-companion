@@ -163,6 +163,21 @@ def api_job(job_id: str, request: Request, user: str = Depends(require_user)):
     return dict(row)
 
 
+@app.post("/api/jobs/{job_id}/cancel")
+def api_cancel(job_id: str, request: Request, user: str = Depends(require_user)):
+    return {"ok": downloader.cancel(job_id)}
+
+
+@app.post("/api/jobs/{job_id}/pause")
+def api_pause(job_id: str, request: Request, user: str = Depends(require_user)):
+    return {"ok": downloader.pause(job_id)}
+
+
+@app.post("/api/jobs/{job_id}/resume")
+def api_resume(job_id: str, request: Request, user: str = Depends(require_user)):
+    return {"ok": downloader.resume(job_id)}
+
+
 # -------------------------------------------------------------- account ---
 @app.get("/account", response_class=HTMLResponse)
 def account(request: Request, first: int = 0, user: str = Depends(require_user)):

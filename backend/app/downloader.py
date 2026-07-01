@@ -7,6 +7,7 @@ which Navidrome watches and rescans automatically.
 import os
 import queue
 import shlex
+import signal
 import subprocess
 import threading
 import uuid
@@ -20,6 +21,31 @@ _work: "queue.Queue[str]" = queue.Queue()
 _worker_started = False
 _lock = threading.Lock()
 
+# Running subprocesses, keyed by job id. Guarded by _lock. Each is started in
+# its own session (process group) so we can signal the whole tree — spotdl and
+# yt-dlp spawn ffmpeg children that must also be paused/killed.
+_procs: dict[str, subprocess.Popen] = {}
+# Jobs the user asked to cancel, so the worker skips them (if still queued) and
+# _process reports "cancelled" rather than "failed" when the process is killed.
+_cancelled: set[str] = set()
+
+
+def _pgid(proc: subprocess.Popen) -> int:
+    return os.getpgid(proc.pid)
+
+
+def _signal_job(job_id: str, sig: int) -> bool:
+    """Send a signal to a running job's process group. Returns True if sent."""
+    with _lock:
+        proc = _procs.get(job_id)
+    if proc is None or proc.poll() is not None:
+        return False
+    try:
+        os.killpg(_pgid(proc), sig)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
+
 
 def _run(cmd: list[str], job_id: str) -> int:
     db.append_job_log(job_id, "$ " + " ".join(shlex.quote(c) for c in cmd) + "\n")
@@ -30,12 +56,19 @@ def _run(cmd: list[str], job_id: str) -> int:
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        start_new_session=True,  # own process group for pause/cancel signals
     )
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        db.append_job_log(job_id, line)
-    proc.wait()
-    return proc.returncode
+    with _lock:
+        _procs[job_id] = proc
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            db.append_job_log(job_id, line)
+        proc.wait()
+        return proc.returncode
+    finally:
+        with _lock:
+            _procs.pop(job_id, None)
 
 
 def _yt_dlp_cmd(url: str) -> list[str]:
@@ -83,6 +116,15 @@ def _process(job_id: str):
     job = db.get_job(job_id)
     if job is None:
         return
+    # The job may have been cancelled while still sitting in the queue.
+    with _lock:
+        already_cancelled = job_id in _cancelled or job["status"] == "cancelled"
+    if already_cancelled:
+        with _lock:
+            _cancelled.discard(job_id)
+        db.set_job_status(job_id, "cancelled")
+        return
+
     db.set_job_status(job_id, "running")
     try:
         if job["kind"] == "spotify":
@@ -90,10 +132,19 @@ def _process(job_id: str):
         else:
             cmd = _yt_dlp_cmd(job["target"])
         code = _run(cmd, job_id)
-        db.set_job_status(job_id, "done" if code == 0 else "failed")
     except Exception as exc:  # noqa: BLE001 - surface any failure to the log
         db.append_job_log(job_id, f"\n[error] {exc}\n")
         db.set_job_status(job_id, "failed")
+        return
+
+    # A killed process returns non-zero; report "cancelled" if that was intended.
+    with _lock:
+        was_cancelled = job_id in _cancelled
+        _cancelled.discard(job_id)
+    if was_cancelled:
+        db.set_job_status(job_id, "cancelled")
+    else:
+        db.set_job_status(job_id, "done" if code == 0 else "failed")
 
 
 def _worker():
@@ -121,3 +172,48 @@ def enqueue(kind: str, target: str) -> str:
     db.create_job(job_id, kind, target)
     _work.put(job_id)
     return job_id
+
+
+def cancel(job_id: str) -> bool:
+    """Cancel a queued or running (or paused) job.
+
+    Queued jobs are marked so the worker skips them when dequeued; running jobs
+    have their process group killed. Returns False for jobs already finished.
+    """
+    row = db.get_job(job_id)
+    if row is None or row["status"] in ("done", "failed", "cancelled"):
+        return False
+    with _lock:
+        _cancelled.add(job_id)
+    # If paused, resume first so the signal is delivered promptly, then kill.
+    _signal_job(job_id, signal.SIGCONT)
+    running = _signal_job(job_id, signal.SIGKILL)
+    if not running:
+        # Still queued (no live process): mark cancelled now for immediate UI.
+        db.set_job_status(job_id, "cancelled")
+    return True
+
+
+def pause(job_id: str) -> bool:
+    """Suspend a running job (SIGSTOP the process group)."""
+    if _job_status(job_id) != "running":
+        return False
+    if _signal_job(job_id, signal.SIGSTOP):
+        db.set_job_status(job_id, "paused")
+        return True
+    return False
+
+
+def resume(job_id: str) -> bool:
+    """Resume a paused job (SIGCONT the process group)."""
+    if _job_status(job_id) != "paused":
+        return False
+    if _signal_job(job_id, signal.SIGCONT):
+        db.set_job_status(job_id, "running")
+        return True
+    return False
+
+
+def _job_status(job_id: str) -> str | None:
+    row = db.get_job(job_id)
+    return row["status"] if row else None

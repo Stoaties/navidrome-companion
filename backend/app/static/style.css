@@ -65,8 +65,17 @@ table.jobs td.target { max-width: 340px; overflow: hidden; text-overflow: ellips
 .status { padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.78rem; }
 .status.queued { background: #33384d; color: var(--muted); }
 .status.running { background: rgba(124,92,255,0.2); color: var(--accent); }
+.status.paused { background: rgba(240,190,90,0.18); color: #f0be5a; }
 .status.done { background: rgba(91,225,160,0.18); color: var(--accent-2); }
 .status.failed { background: rgba(255,92,124,0.18); color: var(--danger); }
+.status.cancelled { background: #33384d; color: var(--muted); text-decoration: line-through; }
+button.mini { margin: 0 0.25rem 0 0; padding: 0.25rem 0.6rem; font-size: 0.78rem;
+  font-weight: 600; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); }
+button.mini:hover { filter: brightness(1.2); }
+button.mini.danger { color: var(--danger); border-color: var(--danger);
+  background: transparent; }
+button.mini:disabled { opacity: 0.5; cursor: default; }
 pre.log { background: #0c0e14; padding: 0.8rem; border-radius: 8px;
   max-height: 300px; overflow: auto; font-size: 0.8rem; white-space: pre-wrap; }
 a.toggle-log { color: var(--accent); text-decoration: none; }
