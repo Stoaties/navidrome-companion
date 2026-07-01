@@ -16,9 +16,11 @@
       <input name="acme_email" value="{{ acme_email }}" placeholder="you@example.com">
     </label>
 
-    <h2>Spotify API (optional)</h2>
-    <p class="muted">Improves spotdl reliability for large playlists. Create an
-      app at developer.spotify.com and paste the credentials.</p>
+    <h2>Spotify API keys (advanced — usually leave blank)</h2>
+    <p class="muted">Since Nov 2024, Spotify apps created by individuals
+      <strong>cannot read playlist tracks</strong> (they return 403). Leave these
+      blank to use spotdl's built-in app, which still can. Only fill these in if
+      you have a Spotify app created <em>before</em> Nov 2024.</p>
     <label>Client ID
       <input name="spotify_client_id" value="{{ spotify_client_id }}">
     </label>
@@ -37,9 +39,9 @@
   <div class="alert error">Not connected. Spotify no longer lets app keys read
     playlist tracks, so a one-time user login is required.</div>
   {% endif %}
-  <p class="muted">Save your Client ID/Secret above, add the redirect URI
-    <code>http://127.0.0.1:9900/</code> to your Spotify app, then run this once
-    on the server and follow the prompt:</p>
+  <p class="muted">With the keys above left blank, just run this once on the
+    server and follow the prompt (no Spotify app or redirect URI setup needed —
+    it uses spotdl's built-in app):</p>
   <pre class="log">docker compose exec -it companion python -m app.spotify_login</pre>
 </div>
 

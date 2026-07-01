@@ -4,6 +4,7 @@ Downloads are serialized through a single worker thread so a Pi Zero 2W is
 never asked to run two ffmpeg/spotdl jobs at once. Output lands in MUSIC_DIR,
 which Navidrome watches and rescans automatically.
 """
+import json
 import os
 import queue
 import shlex
@@ -106,11 +107,39 @@ def _clean_spotify_url(url: str) -> str:
     return url
 
 
+# spotdl bin lives in its own pipx venv (see Dockerfile). Ask it for its
+# built-in Spotify credentials; these belong to a pre-Nov-2024 app that still
+# has playlist-track access (personal apps created now get 403 on playlists).
+_SPOTDL_PY = "/opt/pipx/venvs/spotdl/bin/python"
+# Fallback if the venv path differs (e.g. local dev): spotdl's public defaults.
+_DEFAULT_CREDS = ("5f573c9620494bae87890c0f08a60293",
+                  "212476d9b0f3472eaa762d90b19b0ba8")
+
+
+def spotdl_default_creds() -> tuple[str, str]:
+    try:
+        out = subprocess.check_output(
+            [_SPOTDL_PY, "-c",
+             "import json;from spotdl.utils.config import DEFAULT_CONFIG as d;"
+             "print(json.dumps([d['client_id'], d['client_secret']]))"],
+            text=True, timeout=15,
+        )
+        cid, secret = json.loads(out)
+        if cid and secret:
+            return cid, secret
+    except Exception:  # noqa: BLE001 - fall back to the known public defaults
+        pass
+    return _DEFAULT_CREDS
+
+
 def _spotdl_cmd(url: str) -> list[str]:
     cmd = [
         "spotdl", "download", _clean_spotify_url(url),
         "--output", "{artist}/{album}/{title}.{output-ext}",
     ]
+    # Only pass custom credentials if the user explicitly set them. Leaving them
+    # blank means spotdl uses its grandfathered built-in app, which — unlike a
+    # freshly created personal app — can still read playlist tracks.
     client_id = db.get_setting("spotify_client_id", "")
     client_secret = db.get_setting("spotify_client_secret", "")
     if client_id and client_secret:

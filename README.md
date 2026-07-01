@@ -63,26 +63,30 @@ and renews the TLS certificate automatically. No restart needed.
 
 ## Spotify imports
 
-Spotify has tightened its Web API: **app-only credentials can no longer read
-playlist or album tracks** (the API returns `401/403 "Valid user authentication
-required"`). spotdl therefore needs a one-time **user login**. Set it up once:
+Spotify tightened its Web API in **November 2024**: reading **playlist tracks**
+now requires a **user login**, and Spotify apps created by individuals *after*
+that date are blocked from playlist tracks entirely (HTTP 403). Two consequences:
 
-1. Create an app at
-   [developer.spotify.com](https://developer.spotify.com/dashboard) and paste the
-   **Client ID / Client secret** into **Settings → Spotify API**, then Save.
-2. In your Spotify app settings, add the Redirect URI **exactly**:
-   `http://127.0.0.1:9900/`
-3. Run the login once and follow the prompt (it prints a URL to authorize, then
-   asks you to paste the URL your browser was redirected to):
+- **Don't create your own Spotify app** — a new one can't read playlists. Leave
+  the Spotify keys in **Settings blank** so spotdl uses its built-in app, which
+  is grandfathered in and still works.
+- You still need a **one-time user login**. Run this once and follow the prompt
+  (it prints a URL to authorize, then asks you to paste the URL your browser was
+  redirected to — no Spotify app or redirect-URI setup required):
 
-   ```bash
-   docker compose exec -it companion python -m app.spotify_login
-   ```
+  ```bash
+  docker compose exec -it companion python -m app.spotify_login
+  ```
 
 The user token is cached on the data volume and refreshed automatically, so
-every later download works without logging in again. **Settings** shows whether
-Spotify is connected. Individual public tracks work without this, but playlists
-and albums require it.
+later downloads work without logging in again. **Settings** shows whether
+Spotify is connected. Individual tracks/albums work without the login; playlists
+require it.
+
+> If you happen to have a Spotify app created *before* Nov 2024, you can put its
+> Client ID/Secret in Settings (and add `http://127.0.0.1:9900/` as a redirect
+> URI) to get your own dedicated rate limit. Otherwise the shared built-in app
+> may occasionally hit rate limits (spotdl retries automatically).
 
 ## Configuration reference
 

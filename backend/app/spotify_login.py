@@ -19,7 +19,7 @@ from spotipy.cache_handler import CacheFileHandler
 from spotipy.oauth2 import SpotifyOAuth
 
 from . import db
-from .downloader import SPOTIPY_CACHE
+from .downloader import SPOTIPY_CACHE, spotdl_default_creds
 
 # Must match spotdl's own --user-auth configuration so the cached token is
 # accepted and refreshed by spotdl (see spotdl/utils/spotify.py).
@@ -28,11 +28,16 @@ SCOPE = "user-library-read,user-follow-read,playlist-read-private"
 
 
 def main() -> int:
+    # Prefer custom credentials only if the user set them (advanced: requires a
+    # Spotify app created before Nov 2024, which still has playlist access).
+    # Otherwise use spotdl's built-in app, which is grandfathered in and already
+    # has the 127.0.0.1:9900 redirect registered — so nothing to configure.
     client_id = db.get_setting("spotify_client_id", "")
     client_secret = db.get_setting("spotify_client_secret", "")
-    if not client_id or not client_secret:
-        print("Set your Spotify Client ID and Secret in Settings first.")
-        return 1
+    using_builtin = not (client_id and client_secret)
+    if using_builtin:
+        client_id, client_secret = spotdl_default_creds()
+        print("Using spotdl's built-in Spotify app (no custom keys set).")
 
     oauth = SpotifyOAuth(
         client_id=client_id,
@@ -43,14 +48,14 @@ def main() -> int:
         open_browser=False,
     )
 
-    print("\nStep 1. In your Spotify app settings, add this exact Redirect URI")
-    print("        (Dashboard -> your app -> Settings -> Redirect URIs), save:")
-    print(f"\n            {REDIRECT_URI}\n")
-    print("Step 2. Open this URL, log in and click Agree:\n")
+    if not using_builtin:
+        print("\nStep 1. In your Spotify app settings, add this exact Redirect")
+        print("        URI (Dashboard -> app -> Settings -> Redirect URIs), save:")
+        print(f"\n            {REDIRECT_URI}\n")
+    print("Open this URL, log in and click Agree:\n")
     print(f"            {oauth.get_authorize_url()}\n")
-    print("Step 3. Your browser will then fail to load a page at 127.0.0.1:9900")
-    print("        — that is expected. Copy the FULL address-bar URL and paste")
-    print("        it below.\n")
+    print("Your browser will then fail to load a page at 127.0.0.1:9900 —")
+    print("that is expected. Copy the FULL address-bar URL and paste it below.\n")
 
     response = input("Paste the redirect URL here: ").strip()
     try:
