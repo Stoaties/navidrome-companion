@@ -1,0 +1,16 @@
+# Local runtime state — never commit
+.env
+/data/
+music/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

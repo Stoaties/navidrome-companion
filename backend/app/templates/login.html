@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Sign in · navidrome-companion{% endblock %}
+{% block content %}
+<div class="card auth">
+  <h1>♪ navidrome-companion</h1>
+  <p class="muted">Sign in to manage your music server.</p>
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  <form method="post" action="/login">
+    <label>Username
+      <input name="username" autocomplete="username" autofocus required>
+    </label>
+    <label>Password
+      <input name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit">Sign in</button>
+  </form>
+</div>
+{% endblock %}

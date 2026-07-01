@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · navidrome-companion{% endblock %}
+{% block content %}
+<h1>Download music</h1>
+
+<div class="grid">
+  <div class="card">
+    <h2>Direct URL</h2>
+    <p class="muted">YouTube, SoundCloud, Bandcamp and anything else yt-dlp
+      supports. Audio is extracted to MP3 and tagged automatically.</p>
+    <form method="post" action="/download">
+      <input name="url" placeholder="https://..." required>
+      <button type="submit">Download</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Spotify import</h2>
+    <p class="muted">Paste a Spotify track, album or playlist link. spotdl finds
+      matching audio and downloads it. Add Spotify API keys in Settings for
+      large playlists.</p>
+    <form method="post" action="/spotify">
+      <input name="url" placeholder="https://open.spotify.com/playlist/..." required>
+      <button type="submit">Import</button>
+    </form>
+  </div>
+</div>
+
+<h2>Recent jobs</h2>
+<table class="jobs" id="jobs">
+  <thead>
+    <tr><th>Type</th><th>Target</th><th>Status</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for job in jobs %}
+    <tr data-id="{{ job.id }}">
+      <td>{{ job.kind }}</td>
+      <td class="target">{{ job.target }}</td>
+      <td><span class="status {{ job.status }}">{{ job.status }}</span></td>
+      <td><a href="#" class="toggle-log">log</a></td>
+    </tr>
+    <tr class="logrow" data-log-for="{{ job.id }}" hidden>
+      <td colspan="4"><pre class="log"></pre></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">No downloads yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script src="/static/app.js"></script>
+{% endblock %}

@@ -1,0 +1,60 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: nc-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - companion
+      - navidrome
+    networks:
+      - internal
+
+  companion:
+    build: ./backend
+    container_name: nc-companion
+    restart: unless-stopped
+    environment:
+      # Seeded on first boot only (if no users exist yet).
+      - DEFAULT_ADMIN_USERNAME=${DEFAULT_ADMIN_USERNAME:-admin}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-changeme}
+      # How the companion reaches Caddy's admin API to push live config.
+      - CADDY_ADMIN=http://caddy:2019
+      - NAVIDROME_INTERNAL_URL=http://navidrome:4533
+    volumes:
+      - ./data/companion:/data
+      - music:/music
+    networks:
+      - internal
+
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: nc-navidrome
+    restart: unless-stopped
+    environment:
+      - ND_BASEURL=/navidrome
+      - ND_SCANSCHEDULE=1m
+      - ND_LOGLEVEL=info
+      # Pi Zero 2W has limited RAM/CPU — keep transcoding modest.
+      - ND_ENABLETRANSCODINGCONFIG=true
+    volumes:
+      - ./data/navidrome:/data
+      - music:/music:ro
+    networks:
+      - internal
+
+volumes:
+  music:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+    driver: bridge

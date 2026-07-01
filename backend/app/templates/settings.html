@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Settings · navidrome-companion{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+{% if msg %}<div class="alert {{ msg[0] }}">{{ msg[1] }}</div>{% endif %}
+
+<div class="card">
+  <h2>Public access</h2>
+  <p class="muted">Set a domain that points at this server's public IP. Caddy
+    obtains an HTTPS certificate automatically. Leave blank to serve plain HTTP.</p>
+  <form method="post" action="/settings">
+    <label>Public domain
+      <input name="public_domain" value="{{ domain }}" placeholder="music.example.com">
+    </label>
+    <label>Let's Encrypt email (optional)
+      <input name="acme_email" value="{{ acme_email }}" placeholder="you@example.com">
+    </label>
+
+    <h2>Spotify API (optional)</h2>
+    <p class="muted">Improves spotdl reliability for large playlists. Create an
+      app at developer.spotify.com and paste the credentials.</p>
+    <label>Client ID
+      <input name="spotify_client_id" value="{{ spotify_client_id }}">
+    </label>
+    <label>Client secret
+      <input name="spotify_client_secret" type="password" value="{{ spotify_client_secret }}">
+    </label>
+
+    <button type="submit">Save settings</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Users</h2>
+  <table class="jobs">
+    <thead><tr><th>User</th><th>Role</th><th></th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.username }}</td>
+        <td>{{ "admin" if u.is_admin else "user" }}</td>
+        <td>
+          {% if u.username != user %}
+          <form method="post" action="/users/delete" class="inline">
+            <input type="hidden" name="username" value="{{ u.username }}">
+            <button class="danger" type="submit">delete</button>
+          </form>
+          {% else %}<span class="muted">you</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h3>Add user</h3>
+  <form method="post" action="/users/add" class="row">
+    <input name="username" placeholder="username" required>
+    <input name="password" type="password" placeholder="temporary password" required>
+    <label class="checkbox"><input type="checkbox" name="is_admin" value="1"> admin</label>
+    <button type="submit">Add</button>
+  </form>
+  <p class="muted">New users are prompted to change their password on first login.</p>
+</div>
+{% endblock %}

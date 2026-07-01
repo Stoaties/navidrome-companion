@@ -1,0 +1,19 @@
+# Boot configuration for Caddy.
+#
+# The companion app rewrites Caddy's live config through the admin API
+# (http://caddy:2019) whenever you change the public domain in Settings.
+# This file is only what Caddy starts with before that first push, and the
+# fallback if you restart the stack. It serves plain HTTP on :80 for any host.
+
+{
+	# Expose the admin API on the internal docker network so the companion
+	# container can push new configs. Not published to the host.
+	admin 0.0.0.0:2019
+}
+
+:80 {
+	handle_path /navidrome/* {
+		reverse_proxy navidrome:4533
+	}
+	reverse_proxy companion:8000
+}

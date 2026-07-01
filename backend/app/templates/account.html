@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Account · navidrome-companion{% endblock %}
+{% block content %}
+<h1>Account</h1>
+{% if first %}
+<div class="alert error">You are still using the default password. Please set a
+  new one before continuing.</div>
+{% endif %}
+{% if msg %}<div class="alert {{ msg[0] }}">{{ msg[1] }}</div>{% endif %}
+
+<div class="card">
+  <h2>Change password</h2>
+  <form method="post" action="/account">
+    <label>Current password
+      <input name="current" type="password" autocomplete="current-password" required>
+    </label>
+    <label>New password
+      <input name="new" type="password" autocomplete="new-password" required>
+    </label>
+    <label>Confirm new password
+      <input name="confirm" type="password" autocomplete="new-password" required>
+    </label>
+    <button type="submit">Update password</button>
+  </form>
+</div>
+{% endblock %}
