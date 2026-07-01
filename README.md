@@ -63,9 +63,26 @@ and renews the TLS certificate automatically. No restart needed.
 
 ## Spotify imports
 
-Small playlists work out of the box. For large playlists, create an app at
-[developer.spotify.com](https://developer.spotify.com/dashboard) and paste the
-**Client ID / Client secret** into **Settings → Spotify API**.
+Spotify has tightened its Web API: **app-only credentials can no longer read
+playlist or album tracks** (the API returns `401/403 "Valid user authentication
+required"`). spotdl therefore needs a one-time **user login**. Set it up once:
+
+1. Create an app at
+   [developer.spotify.com](https://developer.spotify.com/dashboard) and paste the
+   **Client ID / Client secret** into **Settings → Spotify API**, then Save.
+2. In your Spotify app settings, add the Redirect URI **exactly**:
+   `http://127.0.0.1:9900/`
+3. Run the login once and follow the prompt (it prints a URL to authorize, then
+   asks you to paste the URL your browser was redirected to):
+
+   ```bash
+   docker compose exec -it companion python -m app.spotify_login
+   ```
+
+The user token is cached on the data volume and refreshed automatically, so
+every later download works without logging in again. **Settings** shows whether
+Spotify is connected. Individual public tracks work without this, but playlists
+and albums require it.
 
 ## Configuration reference
 

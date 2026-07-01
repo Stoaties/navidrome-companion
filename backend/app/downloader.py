@@ -16,6 +16,11 @@ from urllib.parse import urlparse, urlunparse
 from . import db
 
 MUSIC_DIR = os.environ.get("MUSIC_DIR", "/music")
+# spotipy token cache for Spotify user-auth, kept on the persistent data volume
+# so a one-time login (app.spotify_login) survives restarts and is reused by
+# every download job.
+SPOTIPY_CACHE = os.path.join(
+    os.environ.get("COMPANION_DATA_DIR", "/data"), ".spotipy")
 
 _work: "queue.Queue[str]" = queue.Queue()
 _worker_started = False
@@ -54,6 +59,7 @@ def _run(cmd: list[str], job_id: str) -> int:
         cwd=MUSIC_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,  # never block waiting on interactive prompts
         text=True,
         bufsize=1,
         start_new_session=True,  # own process group for pause/cancel signals
@@ -109,6 +115,12 @@ def _spotdl_cmd(url: str) -> list[str]:
     client_secret = db.get_setting("spotify_client_secret", "")
     if client_id and client_secret:
         cmd += ["--client-id", client_id, "--client-secret", client_secret]
+    # Reading playlist/album tracks now requires a Spotify user login. If a
+    # cached user token exists (created by app.spotify_login), use it; spotdl
+    # refreshes it non-interactively. Gate on the file, not just a setting, so
+    # a job never triggers an interactive prompt when no login has been done.
+    if os.path.exists(SPOTIPY_CACHE):
+        cmd += ["--user-auth", "--headless", "--cache-path", SPOTIPY_CACHE]
     return cmd
 
 

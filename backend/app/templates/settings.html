@@ -28,6 +28,19 @@
 
     <button type="submit">Save settings</button>
   </form>
+
+  <h2 style="margin-top:1.4rem">Spotify account login</h2>
+  {% if spotify_connected %}
+  <div class="alert ok">Connected — a Spotify user token is cached, so
+    playlist and album downloads work.</div>
+  {% else %}
+  <div class="alert error">Not connected. Spotify no longer lets app keys read
+    playlist tracks, so a one-time user login is required.</div>
+  {% endif %}
+  <p class="muted">Save your Client ID/Secret above, add the redirect URI
+    <code>http://127.0.0.1:9900/</code> to your Spotify app, then run this once
+    on the server and follow the prompt:</p>
+  <pre class="log">docker compose exec -it companion python -m app.spotify_login</pre>
 </div>
 
 <div class="card">

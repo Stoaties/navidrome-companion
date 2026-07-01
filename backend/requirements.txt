@@ -4,6 +4,9 @@ jinja2==3.1.5
 python-multipart==0.0.20
 itsdangerous==2.2.0
 httpx==0.28.1
+# Only for the one-time Spotify user login (app.spotify_login). Pinned to match
+# the spotipy inside spotdl's venv so the cached token file is interchangeable.
+spotipy==2.26.0
 # Note: yt-dlp and spotdl are intentionally NOT here. They are installed into
 # isolated pipx environments in the Dockerfile and invoked as subprocesses, so
 # their strict dependency pins (e.g. spotdl requires fastapi<0.104) never
