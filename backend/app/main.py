@@ -135,18 +135,21 @@ def dashboard(request: Request, user: str = Depends(require_user)):
 @app.post("/download")
 def download_url(request: Request, url: str = Form(...),
                  user: str = Depends(require_user)):
+    # Auto-detect Spotify vs. direct link so a Spotify URL always reaches spotdl
+    # instead of failing in yt-dlp with a DRM error.
     url = url.strip()
     if url:
-        downloader.enqueue("url", url)
+        downloader.enqueue(None, url)
     return RedirectResponse("/", status_code=303)
 
 
+# Kept for backwards compatibility; kind is auto-detected either way.
 @app.post("/spotify")
 def download_spotify(request: Request, url: str = Form(...),
                      user: str = Depends(require_user)):
     url = url.strip()
     if url:
-        downloader.enqueue("spotify", url)
+        downloader.enqueue(None, url)
     return RedirectResponse("/", status_code=303)
 
 

@@ -164,10 +164,24 @@ def _ensure_worker():
             _worker_started = True
 
 
-def enqueue(kind: str, target: str) -> str:
-    """Create a job (kind: 'url' or 'spotify') and queue it. Returns job id."""
+def is_spotify_url(url: str) -> bool:
+    """True for Spotify web links or spotify: URIs (handled by spotdl)."""
+    url = url.strip().lower()
+    return "spotify.com" in urlparse(url).netloc or url.startswith("spotify:")
+
+
+def enqueue(kind: str | None, target: str) -> str:
+    """Create and queue a job. Returns job id.
+
+    ``kind`` may be 'url' (yt-dlp), 'spotify' (spotdl), or None to auto-detect
+    from the link. Auto-detection means a Spotify link works no matter which
+    box it was pasted into — yt-dlp cannot handle Spotify URLs, so misrouting
+    was the #1 way "download from Spotify" appeared to silently fail.
+    """
     _ensure_worker()
     os.makedirs(MUSIC_DIR, exist_ok=True)
+    if kind is None:
+        kind = "spotify" if is_spotify_url(target) else "url"
     job_id = uuid.uuid4().hex[:12]
     db.create_job(job_id, kind, target)
     _work.put(job_id)
