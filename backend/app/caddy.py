@@ -24,10 +24,14 @@ def render_caddyfile() -> str:
         "{\n\tadmin 0.0.0.0:2019\n}\n\n"
         f"{site} {{\n"
         f"{tls}"
-        "\thandle_path /navidrome/* {\n"
+        # `handle` (not `handle_path`) keeps the /navidrome prefix, which
+        # Navidrome expects because it runs with ND_BASEURL=/navidrome.
+        "\thandle /navidrome/* {\n"
         "\t\treverse_proxy navidrome:4533\n"
         "\t}\n"
-        "\treverse_proxy companion:8000\n"
+        "\thandle {\n"
+        "\t\treverse_proxy companion:8000\n"
+        "\t}\n"
         "}\n"
     )
 

@@ -10,6 +10,7 @@ import shlex
 import subprocess
 import threading
 import uuid
+from urllib.parse import urlparse, urlunparse
 
 from . import db
 
@@ -51,9 +52,24 @@ def _yt_dlp_cmd(url: str) -> list[str]:
     ]
 
 
+def _clean_spotify_url(url: str) -> str:
+    """Drop query/fragment from open.spotify.com links.
+
+    Spotify share links append context params like ``?trackId=`` or ``?si=``.
+    spotdl matches URL types by naive substring ("track" in "trackId"), so a
+    playlist link with ?trackId= gets misread as a track and spotipy rejects it
+    ("Unexpected Spotify URL type"). The entity is fully identified by the path,
+    so stripping the query makes share links Just Work.
+    """
+    parts = urlparse(url)
+    if "spotify.com" in parts.netloc:
+        return urlunparse((parts.scheme, parts.netloc, parts.path, "", "", ""))
+    return url
+
+
 def _spotdl_cmd(url: str) -> list[str]:
     cmd = [
-        "spotdl", "download", url,
+        "spotdl", "download", _clean_spotify_url(url),
         "--output", "{artist}/{album}/{title}.{output-ext}",
     ]
     client_id = db.get_setting("spotify_client_id", "")

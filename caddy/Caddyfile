@@ -12,8 +12,12 @@
 }
 
 :80 {
-	handle_path /navidrome/* {
+	# Use `handle` (not `handle_path`) so the /navidrome prefix is preserved:
+	# Navidrome runs with ND_BASEURL=/navidrome and expects to receive it.
+	handle /navidrome/* {
 		reverse_proxy navidrome:4533
 	}
-	reverse_proxy companion:8000
+	handle {
+		reverse_proxy companion:8000
+	}
 }
