@@ -5,18 +5,19 @@
 
 <div class="card">
   <h2>Add music</h2>
-  <p class="muted">Paste any link and it's routed automatically:
-    <strong>Spotify</strong> track/album/playlist links go through spotdl;
+  <p class="muted">Paste any link and it's routed automatically. A
+    <strong>public Spotify</strong> playlist/album/track link is read from
+    Spotify's public page, then each track's audio is fetched from YouTube.
     <strong>YouTube, SoundCloud, Bandcamp</strong> and anything else yt-dlp
-    supports are downloaded directly. Audio is converted to MP3 and tagged.</p>
+    supports download directly. Audio is converted to MP3 and tagged.</p>
   <form method="post" action="/download">
     <input name="url"
            placeholder="https://open.spotify.com/... or https://youtube.com/..."
            required autofocus>
     <button type="submit">Download</button>
   </form>
-  <p class="muted">Tip: for large Spotify playlists, add Spotify API keys in
-    Settings to avoid rate limits.</p>
+  <p class="muted">Spotify playlists download one track at a time and can take a
+    while — watch progress in the job log below.</p>
 </div>
 
 <h2>Recent jobs</h2>

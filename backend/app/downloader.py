@@ -1,45 +1,48 @@
-"""Background download jobs: direct URLs (yt-dlp) and Spotify (spotdl).
+"""Background download jobs.
 
-Downloads are serialized through a single worker thread so a Pi Zero 2W is
-never asked to run two ffmpeg/spotdl jobs at once. Output lands in MUSIC_DIR,
-which Navidrome watches and rescans automatically.
+Two kinds of job:
+  * ``url``     — a direct link (YouTube, SoundCloud, Bandcamp, ...) fetched with
+                  yt-dlp and converted to a tagged MP3.
+  * ``spotify`` — a Spotify playlist/album/track. The track list is read from
+                  Spotify's public embed page (see spotify.py, no API/OAuth),
+                  then each track's audio is found and downloaded from YouTube
+                  with yt-dlp and tagged with mutagen.
+
+Jobs are serialized through a single worker thread so a Pi Zero 2W is never
+asked to run two ffmpeg jobs at once. Output lands in MUSIC_DIR, which Navidrome
+watches and rescans automatically.
 """
-import json
+import glob
 import os
 import queue
+import re
 import shlex
+import shutil
 import signal
 import subprocess
+import tempfile
 import threading
 import uuid
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse
 
-from . import db
+from . import db, spotify
 
 MUSIC_DIR = os.environ.get("MUSIC_DIR", "/music")
-# spotipy token cache for Spotify user-auth, kept on the persistent data volume
-# so a one-time login (app.spotify_login) survives restarts and is reused by
-# every download job.
-SPOTIPY_CACHE = os.path.join(
-    os.environ.get("COMPANION_DATA_DIR", "/data"), ".spotipy")
 
 _work: "queue.Queue[str]" = queue.Queue()
 _worker_started = False
 _lock = threading.Lock()
 
 # Running subprocesses, keyed by job id. Guarded by _lock. Each is started in
-# its own session (process group) so we can signal the whole tree — spotdl and
-# yt-dlp spawn ffmpeg children that must also be paused/killed.
+# its own session (process group) so we can signal the whole tree — yt-dlp
+# spawns ffmpeg children that must also be paused/killed.
 _procs: dict[str, subprocess.Popen] = {}
 # Jobs the user asked to cancel, so the worker skips them (if still queued) and
 # _process reports "cancelled" rather than "failed" when the process is killed.
 _cancelled: set[str] = set()
 
 
-def _pgid(proc: subprocess.Popen) -> int:
-    return os.getpgid(proc.pid)
-
-
+# ------------------------------------------------------ process/signal utils ---
 def _signal_job(job_id: str, sig: int) -> bool:
     """Send a signal to a running job's process group. Returns True if sent."""
     with _lock:
@@ -47,14 +50,21 @@ def _signal_job(job_id: str, sig: int) -> bool:
     if proc is None or proc.poll() is not None:
         return False
     try:
-        os.killpg(_pgid(proc), sig)
+        os.killpg(os.getpgid(proc.pid), sig)
         return True
     except (ProcessLookupError, PermissionError):
         return False
 
 
-def _run(cmd: list[str], job_id: str) -> int:
-    db.append_job_log(job_id, "$ " + " ".join(shlex.quote(c) for c in cmd) + "\n")
+def _run(cmd: list[str], job_id: str, quiet: bool = False,
+         log_cmd: bool = True) -> int:
+    """Run a subprocess, streaming (or, if quiet, capturing) its output.
+
+    In quiet mode the command's output is not written to the job log unless it
+    fails — this keeps the log readable when downloading many tracks in a row.
+    """
+    if log_cmd:
+        db.append_job_log(job_id, "$ " + " ".join(shlex.quote(c) for c in cmd) + "\n")
     proc = subprocess.Popen(
         cmd,
         cwd=MUSIC_DIR,
@@ -67,17 +77,27 @@ def _run(cmd: list[str], job_id: str) -> int:
     )
     with _lock:
         _procs[job_id] = proc
+    tail: list[str] = []
     try:
         assert proc.stdout is not None
         for line in proc.stdout:
-            db.append_job_log(job_id, line)
+            if quiet:
+                tail.append(line)
+                if len(tail) > 40:
+                    del tail[:-40]
+            else:
+                db.append_job_log(job_id, line)
         proc.wait()
+        # yt-dlp exits 101 when --max-downloads is reached: not an error for us.
+        if quiet and proc.returncode not in (0, 101):
+            db.append_job_log(job_id, "".join(tail[-15:]))
         return proc.returncode
     finally:
         with _lock:
             _procs.pop(job_id, None)
 
 
+# ---------------------------------------------------------------- direct URL ---
 def _yt_dlp_cmd(url: str) -> list[str]:
     return [
         "yt-dlp",
@@ -92,67 +112,102 @@ def _yt_dlp_cmd(url: str) -> list[str]:
     ]
 
 
-def _clean_spotify_url(url: str) -> str:
-    """Drop query/fragment from open.spotify.com links.
-
-    Spotify share links append context params like ``?trackId=`` or ``?si=``.
-    spotdl matches URL types by naive substring ("track" in "trackId"), so a
-    playlist link with ?trackId= gets misread as a track and spotipy rejects it
-    ("Unexpected Spotify URL type"). The entity is fully identified by the path,
-    so stripping the query makes share links Just Work.
-    """
-    parts = urlparse(url)
-    if "spotify.com" in parts.netloc:
-        return urlunparse((parts.scheme, parts.netloc, parts.path, "", "", ""))
-    return url
+# ------------------------------------------------------------------- Spotify ---
+def _sanitize(name: str) -> str:
+    name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", name).strip().strip(".")
+    return name[:180] or "unknown"
 
 
-# spotdl bin lives in its own pipx venv (see Dockerfile). Ask it for its
-# built-in Spotify credentials; these belong to a pre-Nov-2024 app that still
-# has playlist-track access (personal apps created now get 403 on playlists).
-_SPOTDL_PY = "/opt/pipx/venvs/spotdl/bin/python"
-# Fallback if the venv path differs (e.g. local dev): spotdl's public defaults.
-_DEFAULT_CREDS = ("5f573c9620494bae87890c0f08a60293",
-                  "212476d9b0f3472eaa762d90b19b0ba8")
-
-
-def spotdl_default_creds() -> tuple[str, str]:
+def _tag_mp3(path: str, track: "spotify.Track", album: str) -> None:
+    """Best-effort ID3 tagging so Navidrome shows clean artist/title/album."""
     try:
-        out = subprocess.check_output(
-            [_SPOTDL_PY, "-c",
-             "import json;from spotdl.utils.config import DEFAULT_CONFIG as d;"
-             "print(json.dumps([d['client_id'], d['client_secret']]))"],
-            text=True, timeout=15,
-        )
-        cid, secret = json.loads(out)
-        if cid and secret:
-            return cid, secret
-    except Exception:  # noqa: BLE001 - fall back to the known public defaults
+        from mutagen.easyid3 import EasyID3
+        from mutagen.mp3 import MP3
+        try:
+            audio = EasyID3(path)
+        except Exception:  # noqa: BLE001 - no ID3 header yet; create one
+            mp3 = MP3(path)
+            mp3.add_tags()
+            mp3.save()
+            audio = EasyID3(path)
+        audio["title"] = track.title
+        if track.artist:
+            audio["artist"] = track.artist
+        if album:
+            audio["album"] = album
+        audio.save()
+    except Exception:  # noqa: BLE001 - yt-dlp already embedded basic metadata
         pass
-    return _DEFAULT_CREDS
 
 
-def _spotdl_cmd(url: str) -> list[str]:
-    cmd = [
-        "spotdl", "download", _clean_spotify_url(url),
-        "--output", "{artist}/{album}/{title}.{output-ext}",
+def _yt_search_cmd(out_tmpl: str, query: str, dur_s: int) -> list[str]:
+    base = [
+        "yt-dlp", "-x", "--audio-format", "mp3", "--audio-quality", "0",
+        "--no-playlist", "--embed-thumbnail", "-o", out_tmpl,
     ]
-    # Only pass custom credentials if the user explicitly set them. Leaving them
-    # blank means spotdl uses its grandfathered built-in app, which — unlike a
-    # freshly created personal app — can still read playlist tracks.
-    client_id = db.get_setting("spotify_client_id", "")
-    client_secret = db.get_setting("spotify_client_secret", "")
-    if client_id and client_secret:
-        cmd += ["--client-id", client_id, "--client-secret", client_secret]
-    # Reading playlist/album tracks now requires a Spotify user login. If a
-    # cached user token exists (created by app.spotify_login), use it; spotdl
-    # refreshes it non-interactively. Gate on the file, not just a setting, so
-    # a job never triggers an interactive prompt when no login has been done.
-    if os.path.exists(SPOTIPY_CACHE):
-        cmd += ["--user-auth", "--headless", "--cache-path", SPOTIPY_CACHE]
-    return cmd
+    if dur_s > 0:
+        # Prefer a hit whose length matches the Spotify track (avoids picking
+        # remixes, live versions, "sped up" edits, hour-long loops, etc.).
+        lo, hi = max(dur_s - 25, 0), dur_s + 25
+        return base + [
+            "--match-filter", f"duration>={lo} & duration<={hi}",
+            "--max-downloads", "1", f"ytsearch5:{query}",
+        ]
+    return base + [f"ytsearch1:{query}"]
 
 
+def _download_track(track: "spotify.Track", album: str, job_id: str) -> bool:
+    """Find and download one track's audio from YouTube. Returns success."""
+    dur_s = track.duration_ms // 1000
+    with tempfile.TemporaryDirectory() as tmp:
+        out_tmpl = os.path.join(tmp, "%(id)s.%(ext)s")
+        _run(_yt_search_cmd(out_tmpl, track.query, dur_s), job_id,
+             quiet=True, log_cmd=False)
+        mp3s = glob.glob(os.path.join(tmp, "*.mp3"))
+        if not mp3s and dur_s > 0:
+            # Nothing matched the duration window; take the top hit unfiltered.
+            db.append_job_log(job_id, "   (no duration match; taking top result)\n")
+            _run(_yt_search_cmd(out_tmpl, track.query, 0), job_id,
+                 quiet=True, log_cmd=False)
+            mp3s = glob.glob(os.path.join(tmp, "*.mp3"))
+        if not mp3s:
+            return False
+
+        dest_dir = os.path.join(MUSIC_DIR, _sanitize(track.artist or "Unknown Artist"))
+        os.makedirs(dest_dir, exist_ok=True)
+        dest = os.path.join(dest_dir, _sanitize(track.title) + ".mp3")
+        shutil.move(mp3s[0], dest)
+        _tag_mp3(dest, track, album)
+        return True
+
+
+def _process_spotify(job_id: str, url: str) -> bool:
+    """Resolve a Spotify link and download each track. True if any succeeded."""
+    db.append_job_log(job_id, "Reading Spotify link via public embed page...\n")
+    resolved = spotify.resolve(url)
+    album = resolved.name if resolved.kind == "album" else ""
+    total = len(resolved.tracks)
+    db.append_job_log(
+        job_id, f"Found {resolved.kind} '{resolved.name}' — {total} track(s).\n")
+
+    ok = 0
+    for i, track in enumerate(resolved.tracks, 1):
+        with _lock:
+            if job_id in _cancelled:
+                break
+        db.append_job_log(job_id, f"[{i}/{total}] {track.artist} — {track.title}\n")
+        try:
+            if _download_track(track, album, job_id):
+                ok += 1
+            else:
+                db.append_job_log(job_id, "   ! no match found; skipped\n")
+        except Exception as exc:  # noqa: BLE001 - one bad track shouldn't abort
+            db.append_job_log(job_id, f"   ! error: {exc}\n")
+    db.append_job_log(job_id, f"\nFinished: {ok}/{total} track(s) downloaded.\n")
+    return ok > 0
+
+
+# --------------------------------------------------------------- job pipeline ---
 def _process(job_id: str):
     job = db.get_job(job_id)
     if job is None:
@@ -169,10 +224,9 @@ def _process(job_id: str):
     db.set_job_status(job_id, "running")
     try:
         if job["kind"] == "spotify":
-            cmd = _spotdl_cmd(job["target"])
+            success = _process_spotify(job_id, job["target"])
         else:
-            cmd = _yt_dlp_cmd(job["target"])
-        code = _run(cmd, job_id)
+            success = _run(_yt_dlp_cmd(job["target"]), job_id) == 0
     except Exception as exc:  # noqa: BLE001 - surface any failure to the log
         db.append_job_log(job_id, f"\n[error] {exc}\n")
         db.set_job_status(job_id, "failed")
@@ -185,7 +239,7 @@ def _process(job_id: str):
     if was_cancelled:
         db.set_job_status(job_id, "cancelled")
     else:
-        db.set_job_status(job_id, "done" if code == 0 else "failed")
+        db.set_job_status(job_id, "done" if success else "failed")
 
 
 def _worker():
@@ -206,7 +260,7 @@ def _ensure_worker():
 
 
 def is_spotify_url(url: str) -> bool:
-    """True for Spotify web links or spotify: URIs (handled by spotdl)."""
+    """True for Spotify web links or spotify: URIs (resolved via the embed)."""
     url = url.strip().lower()
     return "spotify.com" in urlparse(url).netloc or url.startswith("spotify:")
 
@@ -214,10 +268,8 @@ def is_spotify_url(url: str) -> bool:
 def enqueue(kind: str | None, target: str) -> str:
     """Create and queue a job. Returns job id.
 
-    ``kind`` may be 'url' (yt-dlp), 'spotify' (spotdl), or None to auto-detect
-    from the link. Auto-detection means a Spotify link works no matter which
-    box it was pasted into — yt-dlp cannot handle Spotify URLs, so misrouting
-    was the #1 way "download from Spotify" appeared to silently fail.
+    ``kind`` may be 'url', 'spotify', or None to auto-detect from the link, so a
+    Spotify link works no matter which entry point it came from.
     """
     _ensure_worker()
     os.makedirs(MUSIC_DIR, exist_ok=True)
@@ -229,12 +281,9 @@ def enqueue(kind: str | None, target: str) -> str:
     return job_id
 
 
+# ------------------------------------------------------------------- controls ---
 def cancel(job_id: str) -> bool:
-    """Cancel a queued or running (or paused) job.
-
-    Queued jobs are marked so the worker skips them when dequeued; running jobs
-    have their process group killed. Returns False for jobs already finished.
-    """
+    """Cancel a queued, running or paused job. False if already finished."""
     row = db.get_job(job_id)
     if row is None or row["status"] in ("done", "failed", "cancelled"):
         return False

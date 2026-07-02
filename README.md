@@ -8,10 +8,11 @@ lets you:
 - 🎵 **Download music from a web interface** — paste any URL (YouTube,
   SoundCloud, Bandcamp, …) and it's fetched, converted to MP3 and tagged via
   [yt-dlp](https://github.com/yt-dlp/yt-dlp).
-- 💚 **Import Spotify playlists / albums / tracks** using
-  [spotdl](https://github.com/spotDL/spotify-downloader).
+- 💚 **Import public Spotify playlists / albums / tracks** — the track list is
+  read from Spotify's public page (no API key or login) and each track's audio
+  is fetched from YouTube via yt-dlp and tagged.
 - ⚙️ **Configure everything from the browser** — public domain (with automatic
-  HTTPS via [Caddy](https://caddyserver.com/)), Spotify API keys, and users.
+  HTTPS via [Caddy](https://caddyserver.com/)) and users.
 - 🔒 **Authentication on every web interface** — the management app is fully
   gated, and Navidrome has its own login. A default admin account is seeded on
   first boot.
@@ -25,7 +26,7 @@ acquisition and configuration.
                        │  /navidrome/* → navidrome    │
                        └──────────────┬──────────────┘
                           companion (FastAPI)  navidrome
-                          yt-dlp / spotdl  ───▶  shared /music volume
+                          embed reader + yt-dlp ─▶ shared /music volume
 ```
 
 ## Quick start
@@ -63,30 +64,23 @@ and renews the TLS certificate automatically. No restart needed.
 
 ## Spotify imports
 
-Spotify tightened its Web API in **November 2024**: reading **playlist tracks**
-now requires a **user login**, and Spotify apps created by individuals *after*
-that date are blocked from playlist tracks entirely (HTTP 403). Two consequences:
+**No API keys, no login, no setup.** Paste a **public** Spotify playlist, album
+or track link on the dashboard. The companion reads the track list straight from
+Spotify's public page (the same data an embedded player shows), then finds and
+downloads each track's audio from YouTube with yt-dlp, matching by title, artist
+and duration, and tags the resulting MP3.
 
-- **Don't create your own Spotify app** — a new one can't read playlists. Leave
-  the Spotify keys in **Settings blank** so spotdl uses its built-in app, which
-  is grandfathered in and still works.
-- You still need a **one-time user login**. Run this once and follow the prompt
-  (it prints a URL to authorize, then asks you to paste the URL your browser was
-  redirected to — no Spotify app or redirect-URI setup required):
+This deliberately avoids the Spotify Web API, which since November 2024 blocks
+playlist-track reads for newly created apps and heavily rate-limits shared ones.
 
-  ```bash
-  docker compose exec -it companion python -m app.spotify_login
-  ```
+Notes:
 
-The user token is cached on the data volume and refreshed automatically, so
-later downloads work without logging in again. **Settings** shows whether
-Spotify is connected. Individual tracks/albums work without the login; playlists
-require it.
-
-> If you happen to have a Spotify app created *before* Nov 2024, you can put its
-> Client ID/Secret in Settings (and add `http://127.0.0.1:9900/` as a redirect
-> URI) to get your own dedicated rate limit. Otherwise the shared built-in app
-> may occasionally hit rate limits (spotdl retries automatically).
+- Only **public** playlists/albums are readable. If yours is private, set it to
+  public in Spotify first (Playlist → … → Make public).
+- Playlists download **one track at a time** and can take a while; progress is
+  shown live in the job log, and you can pause/cancel from the dashboard.
+- Matching is by title/artist/duration, so the occasional track may not match
+  perfectly — the job log lists anything it skipped.
 
 ## Configuration reference
 
@@ -94,7 +88,6 @@ require it.
 | ---------------------- | ---------------- | --------------------------------------- |
 | Default admin user/pw  | `.env`           | First boot only, then managed in the UI |
 | Public domain / HTTPS  | Settings UI      | Rendered into Caddy live                |
-| Spotify API keys       | Settings UI      | Optional, improves spotdl reliability   |
 | Users                  | Settings UI      | Add/remove; new users must reset pw     |
 
 Persistent state lives in `./data` (SQLite config + Navidrome database) and the
@@ -128,7 +121,8 @@ The management app is a small FastAPI project under [`backend/`](backend/):
 backend/app/
   main.py        # routes, auth, session
   db.py          # SQLite storage (users, settings, jobs)
-  downloader.py  # yt-dlp / spotdl job worker
+  spotify.py     # reads track lists from Spotify's public embed page
+  downloader.py  # job worker: yt-dlp download + mutagen tagging
   caddy.py       # renders + pushes Caddy config via the admin API
   templates/     # Jinja2 UI
   static/        # CSS + job-polling JS

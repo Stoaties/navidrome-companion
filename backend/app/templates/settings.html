@@ -16,33 +16,14 @@
       <input name="acme_email" value="{{ acme_email }}" placeholder="you@example.com">
     </label>
 
-    <h2>Spotify API keys (advanced — usually leave blank)</h2>
-    <p class="muted">Since Nov 2024, Spotify apps created by individuals
-      <strong>cannot read playlist tracks</strong> (they return 403). Leave these
-      blank to use spotdl's built-in app, which still can. Only fill these in if
-      you have a Spotify app created <em>before</em> Nov 2024.</p>
-    <label>Client ID
-      <input name="spotify_client_id" value="{{ spotify_client_id }}">
-    </label>
-    <label>Client secret
-      <input name="spotify_client_secret" type="password" value="{{ spotify_client_secret }}">
-    </label>
-
     <button type="submit">Save settings</button>
   </form>
 
-  <h2 style="margin-top:1.4rem">Spotify account login</h2>
-  {% if spotify_connected %}
-  <div class="alert ok">Connected — a Spotify user token is cached, so
-    playlist and album downloads work.</div>
-  {% else %}
-  <div class="alert error">Not connected. Spotify no longer lets app keys read
-    playlist tracks, so a one-time user login is required.</div>
-  {% endif %}
-  <p class="muted">With the keys above left blank, just run this once on the
-    server and follow the prompt (no Spotify app or redirect URI setup needed —
-    it uses spotdl's built-in app):</p>
-  <pre class="log">docker compose exec -it companion python -m app.spotify_login</pre>
+  <h2 style="margin-top:1.4rem">Spotify</h2>
+  <p class="muted">No setup needed. Paste a <strong>public</strong> Spotify
+    playlist, album or track link on the dashboard — the track list is read from
+    Spotify's public page and each track's audio is fetched from YouTube and
+    tagged. Private playlists aren't accessible; set them to public first.</p>
 </div>
 
 <div class="card">

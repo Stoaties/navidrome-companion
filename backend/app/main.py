@@ -1,8 +1,8 @@
 """navidrome-companion: management web app for a lightweight Pi music server.
 
-Provides authenticated web UIs for downloading music (yt-dlp), importing Spotify
-playlists (spotdl), and configuring the public domain and users. Sits in front of
-Navidrome, which serves the actual library.
+Provides authenticated web UIs for downloading music (yt-dlp), importing public
+Spotify playlists (read from Spotify's public embed page), and configuring the
+public domain and users. Sits in front of Navidrome, which serves the library.
 """
 import os
 import secrets
@@ -135,8 +135,8 @@ def dashboard(request: Request, user: str = Depends(require_user)):
 @app.post("/download")
 def download_url(request: Request, url: str = Form(...),
                  user: str = Depends(require_user)):
-    # Auto-detect Spotify vs. direct link so a Spotify URL always reaches spotdl
-    # instead of failing in yt-dlp with a DRM error.
+    # Auto-detect Spotify vs. direct link so a Spotify URL is resolved via the
+    # embed reader instead of failing in yt-dlp with a DRM error.
     url = url.strip()
     if url:
         downloader.enqueue(None, url)
@@ -221,9 +221,6 @@ def settings_page(request: Request, user: str = Depends(require_admin)):
             "user": user,
             "domain": db.get_setting("public_domain", ""),
             "acme_email": db.get_setting("acme_email", ""),
-            "spotify_client_id": db.get_setting("spotify_client_id", ""),
-            "spotify_client_secret": db.get_setting("spotify_client_secret", ""),
-            "spotify_connected": os.path.exists(downloader.SPOTIPY_CACHE),
             "users": db.list_users(),
             "msg": None,
         },
@@ -232,13 +229,10 @@ def settings_page(request: Request, user: str = Depends(require_admin)):
 
 @app.post("/settings")
 def save_settings(request: Request, public_domain: str = Form(""),
-                  acme_email: str = Form(""), spotify_client_id: str = Form(""),
-                  spotify_client_secret: str = Form(""),
+                  acme_email: str = Form(""),
                   user: str = Depends(require_admin)):
     db.set_setting("public_domain", public_domain.strip())
     db.set_setting("acme_email", acme_email.strip())
-    db.set_setting("spotify_client_id", spotify_client_id.strip())
-    db.set_setting("spotify_client_secret", spotify_client_secret.strip())
     ok, message = caddy.push_config()
     msg = ("ok" if ok else "error", message)
     return templates.TemplateResponse(
@@ -248,9 +242,6 @@ def save_settings(request: Request, public_domain: str = Form(""),
             "user": user,
             "domain": public_domain.strip(),
             "acme_email": acme_email.strip(),
-            "spotify_client_id": spotify_client_id.strip(),
-            "spotify_client_secret": spotify_client_secret.strip(),
-            "spotify_connected": os.path.exists(downloader.SPOTIPY_CACHE),
             "users": db.list_users(),
             "msg": msg,
         },

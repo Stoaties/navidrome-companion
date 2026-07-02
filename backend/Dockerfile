@@ -1,8 +1,10 @@
 FROM python:3.12-slim
 
-# ffmpeg is required by yt-dlp/spotdl for audio extraction and tagging.
+# ffmpeg: audio extraction/tagging. deno: JS runtime yt-dlp now needs for
+# reliable YouTube extraction. curl/unzip/ca-certificates: to install deno.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg curl unzip ca-certificates \
+    && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -11,14 +13,15 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install the download tools in isolated pipx environments and expose their
-# CLIs on PATH (/usr/local/bin). This keeps spotdl's strict pins (fastapi<0.104,
-# etc.) fully separate from the web app, which calls them as subprocesses.
+# Install yt-dlp in an isolated pipx environment and expose its CLI on PATH.
+# NOT pinned: YouTube changes frequently and only a current yt-dlp keeps working
+# (a stale pin is what broke Spotify/YouTube downloads before). Rebuild to update.
+# Spotify track lists are read from the public embed page in-process; only the
+# audio download uses yt-dlp, so spotdl is no longer needed.
 ENV PIPX_HOME=/opt/pipx \
     PIPX_BIN_DIR=/usr/local/bin
 RUN pip install --no-cache-dir pipx \
-    && pipx install spotdl==4.2.11 \
-    && pipx install yt-dlp==2024.12.23
+    && pipx install yt-dlp
 
 COPY app ./app
 
