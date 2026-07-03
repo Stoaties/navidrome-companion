@@ -30,6 +30,12 @@ sudo reboot                    # only needed the first time, to enable SPI
 sudo systemctl start musiceink-display
 ```
 
+The installer also sets up **`musiceink-tz.service`**, which detects the
+timezone from the server's public-IP geolocation at every boot and applies it
+with `timedatectl` — so the displayed clock is correct without manual config,
+even if the Pi moves networks. (Run `/opt/musiceink/detect-timezone.sh` to force
+it.)
+
 Wiring: seat the HAT on the 40-pin header. The panel version (V2/V3/V4) sets the
 driver — pass it to `install.sh`; if the screen stays blank, try another. Preview
 a single frame without the service:

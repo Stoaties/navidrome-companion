@@ -1,0 +1,12 @@
+[Unit]
+Description=Detect and set the timezone from geo-IP at boot
+After=network-online.target
+Wants=network-online.target
+Before=musiceink-display.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/musiceink/detect-timezone.sh
+
+[Install]
+WantedBy=multi-user.target

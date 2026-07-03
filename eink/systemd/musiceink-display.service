@@ -1,6 +1,6 @@
 [Unit]
 Description=musicEink e-ink status display
-After=network-online.target docker.service
+After=network-online.target docker.service musiceink-tz.service
 Wants=network-online.target
 
 [Service]

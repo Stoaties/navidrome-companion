@@ -26,6 +26,8 @@ fi
 echo "== installing app to $DEST =="
 mkdir -p "$LIB/waveshare_epd"
 cp -r "$HERE/musiceink" "$DEST/"
+cp "$HERE/detect-timezone.sh" "$DEST/"
+chmod +x "$DEST/detect-timezone.sh"
 
 echo "== fetching Waveshare e-Paper driver ($DRIVER) =="
 BASE="https://raw.githubusercontent.com/waveshareteam/e-Paper/master/RaspberryPi_JetsonNano/python/lib/waveshare_epd"
@@ -55,10 +57,14 @@ PORTAL_IP=192.168.4.1
 ENV
 fi
 
-echo "== installing systemd service =="
+echo "== installing systemd services =="
+cp "$HERE/systemd/musiceink-tz.service" /etc/systemd/system/
 cp "$HERE/systemd/musiceink-display.service" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable musiceink-display.service
+systemctl enable musiceink-tz.service musiceink-display.service
+
+echo "== detecting timezone now =="
+"$DEST/detect-timezone.sh" || true
 
 echo
 echo "Done. If SPI was just enabled, reboot first:  reboot"
