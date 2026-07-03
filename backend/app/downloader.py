@@ -168,32 +168,62 @@ def _yt_search_cmd(out_tmpl: str, query: str, dur_s: int) -> list[str]:
     return base + [f"ytsearch1:{query}"]
 
 
-def _download_track(track: "spotify.Track", album: str, job_id: str) -> bool:
-    """Find and download one track's audio from YouTube. Returns success."""
+def _primary_artist(artist: str) -> str:
+    """The main artist, dropping featured/collaborators (Spotify joins with ', ')."""
+    return artist.split(",")[0].split("&")[0].split(" feat")[0].strip()
+
+
+def _download_track(track: "spotify.Track", album: str, job_id: str,
+                    seen: set) -> bool:
+    """Find and download one track's audio from YouTube. Returns success.
+
+    ``seen`` holds destination paths already used in this job so a genuine
+    duplicate within a playlist is disambiguated instead of overwriting.
+    """
     dest_dir = os.path.join(MUSIC_DIR, _sanitize(track.artist or "Unknown Artist"))
-    dest = os.path.join(dest_dir, _sanitize(track.title) + ".mp3")
-    # Skip tracks we already have — makes re-running a playlist (e.g. after a
-    # restart) cheap and idempotent instead of re-downloading everything.
-    if os.path.exists(dest):
+    base = os.path.join(dest_dir, _sanitize(track.title))
+    dest = base + ".mp3"
+    if dest not in seen and os.path.exists(dest):
+        # Present from a previous run — skip so re-running a playlist is cheap.
+        seen.add(dest)
         db.append_job_log(job_id, "   already downloaded; skipping\n")
         return True
+    if dest in seen:
+        # A different track with the same name in this same job — don't clobber.
+        i = 2
+        while f"{base} ({i}).mp3" in seen or os.path.exists(f"{base} ({i}).mp3"):
+            i += 1
+        dest = f"{base} ({i}).mp3"
+
+    # Progressive search: most specific first, then looser, so niche tracks
+    # (featured artists, odd punctuation) still get found instead of failing.
     dur_s = track.duration_ms // 1000
+    primary = _primary_artist(track.artist)
+    q_primary = f"{primary} {track.title}".strip()
+    attempts = [(track.query, dur_s)]
+    if q_primary and q_primary != track.query:
+        attempts.append((q_primary, dur_s))
+    attempts.append((q_primary or track.query, 0))
+    attempts.append((track.title.strip(), 0))
+
     with tempfile.TemporaryDirectory() as tmp:
         out_tmpl = os.path.join(tmp, "%(id)s.%(ext)s")
-        _run(_yt_search_cmd(out_tmpl, track.query, dur_s), job_id,
-             quiet=True, log_cmd=False)
-        mp3s = glob.glob(os.path.join(tmp, "*.mp3"))
-        if not mp3s and dur_s > 0:
-            # Nothing matched the duration window; take the top hit unfiltered.
-            db.append_job_log(job_id, "   (no duration match; taking top result)\n")
-            _run(_yt_search_cmd(out_tmpl, track.query, 0), job_id,
+        mp3 = None
+        for query, dur in attempts:
+            if not query:
+                continue
+            _run(_yt_search_cmd(out_tmpl, query, dur), job_id,
                  quiet=True, log_cmd=False)
-            mp3s = glob.glob(os.path.join(tmp, "*.mp3"))
-        if not mp3s:
+            found = glob.glob(os.path.join(tmp, "*.mp3"))
+            if found:
+                mp3 = found[0]
+                break
+        if not mp3:
             return False
 
         os.makedirs(dest_dir, exist_ok=True)
-        shutil.move(mp3s[0], dest)
+        shutil.move(mp3, dest)
+        seen.add(dest)
         _tag_mp3(dest, track, album)
         return True
 
@@ -208,19 +238,32 @@ def _process_spotify(job_id: str, url: str) -> bool:
         job_id, f"Found {resolved.kind} '{resolved.name}' — {total} track(s).\n")
 
     ok = 0
+    seen: set = set()
+    failed: list[str] = []
     for i, track in enumerate(resolved.tracks, 1):
         with _lock:
             if job_id in _cancelled:
                 break
         db.append_job_log(job_id, f"[{i}/{total}] {track.artist} — {track.title}\n")
         try:
-            if _download_track(track, album, job_id):
+            if _download_track(track, album, job_id, seen):
                 ok += 1
             else:
-                db.append_job_log(job_id, "   ! no match found; skipped\n")
+                failed.append(track.title)
+                db.append_job_log(job_id, "   ! not found on YouTube; skipped\n")
         except Exception as exc:  # noqa: BLE001 - one bad track shouldn't abort
+            failed.append(track.title)
             db.append_job_log(job_id, f"   ! error: {exc}\n")
-    db.append_job_log(job_id, f"\nFinished: {ok}/{total} track(s) downloaded.\n")
+
+    summary = f"{ok}/{total} downloaded"
+    if failed:
+        db.append_job_log(
+            job_id, f"\nFinished: {summary}. {len(failed)} not found:\n  - "
+            + "\n  - ".join(failed) + "\n")
+        summary += " · missing: " + ", ".join(failed)
+    else:
+        db.append_job_log(job_id, f"\nFinished: {summary}.\n")
+    db.set_job_result(job_id, summary[:250])
     return ok > 0
 
 

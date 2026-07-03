@@ -30,7 +30,8 @@
     <tr data-id="{{ job.id }}">
       <td>{{ job.kind }}</td>
       <td class="target">{{ job.target }}</td>
-      <td><span class="status {{ job.status }}">{{ job.status }}</span></td>
+      <td><span class="status {{ job.status }}">{{ job.status }}</span>
+        <div class="result">{{ job.result or "" }}</div></td>
       <td class="actions"></td>
       <td><a href="#" class="toggle-log">log</a></td>
     </tr>

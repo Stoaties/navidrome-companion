@@ -33,6 +33,10 @@
           badge.textContent = job.status;
           badge.className = "status " + job.status;
         }
+        const res = row.querySelector(".result");
+        if (res && res.textContent !== (job.result || "")) {
+          res.textContent = job.result || "";
+        }
         const cell = row.querySelector(".actions");
         const markup = actionsFor(row.dataset.id, job.status);
         if (cell && cell.dataset.status !== job.status) {

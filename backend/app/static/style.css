@@ -79,3 +79,5 @@ button.mini:disabled { opacity: 0.5; cursor: default; }
 pre.log { background: #0c0e14; padding: 0.8rem; border-radius: 8px;
   max-height: 300px; overflow: auto; font-size: 0.8rem; white-space: pre-wrap; }
 a.toggle-log { color: var(--accent); text-decoration: none; }
+.result { font-size: 0.72rem; color: var(--muted); margin-top: 0.25rem;
+  max-width: 260px; white-space: normal; }

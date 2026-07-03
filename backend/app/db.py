@@ -52,11 +52,17 @@ def init_db():
                 target TEXT NOT NULL,
                 status TEXT NOT NULL,
                 log TEXT NOT NULL DEFAULT '',
+                result TEXT,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             );
             """
         )
+        # Migration for databases created before the result column existed.
+        try:
+            conn.execute("ALTER TABLE jobs ADD COLUMN result TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already present
 
 
 # ---------------------------------------------------------------- passwords ---
@@ -171,10 +177,15 @@ def get_job(job_id: str):
         return conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
 
 
+def set_job_result(job_id: str, result: str):
+    with get_conn() as conn:
+        conn.execute("UPDATE jobs SET result=? WHERE id=?", (result, job_id))
+
+
 def list_jobs(limit: int = 50):
     with get_conn() as conn:
         return conn.execute(
-            "SELECT id, kind, target, status, created_at, updated_at "
+            "SELECT id, kind, target, status, result, created_at, updated_at "
             "FROM jobs ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
