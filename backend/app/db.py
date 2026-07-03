@@ -178,3 +178,13 @@ def list_jobs(limit: int = 50):
             "FROM jobs ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
+
+
+def count_active_jobs() -> tuple[int, int]:
+    """(running, queued) — work in progress. Paused jobs count as neither."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(status='running'),0) AS running, "
+            "COALESCE(SUM(status='queued'),0) AS queued FROM jobs"
+        ).fetchone()
+    return int(row["running"]), int(row["queued"])

@@ -68,7 +68,10 @@ def render_status(panel, st: dict, web_port: int = 80):
         y += 18
 
     footer = time.strftime("updated %H:%M")
-    if url:
+    downloading = st.get("downloading", 0)
+    if downloading:
+        footer += f"  ·  downloading {downloading}"
+    elif url:
         footer += "  ·  scan for web UI"
     d.text((tx, H - 12), footer, font=f_small, fill=0)
     return img

@@ -42,7 +42,10 @@ EINK_DRIVER=$DRIVER
 MUSIC_DIR=/mnt/dietpi_userdata/Music
 WIFI_IFACE=wlan0
 WEB_PORT=80
-REFRESH_SECONDS=60
+# Refresh fast while downloading, slow when idle.
+REFRESH_ACTIVE_SECONDS=60
+REFRESH_IDLE_SECONDS=180
+ACTIVITY_URL=http://127.0.0.1/api/activity
 # Wi-Fi onboarding hotspot. OFF by default: turning it on drops the current
 # Wi-Fi to broadcast a setup AP, so only enable it with console access.
 PROVISION_ENABLE_AP=0

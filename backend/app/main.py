@@ -271,3 +271,11 @@ def remove_user(request: Request, username: str = Form(...),
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
+
+
+@app.get("/api/activity")
+def api_activity():
+    """Unauthenticated download-activity summary (no URLs) for the e-ink display,
+    so it can refresh faster while downloads are in progress."""
+    running, queued = db.count_active_jobs()
+    return {"active": (running + queued) > 0, "running": running, "queued": queued}

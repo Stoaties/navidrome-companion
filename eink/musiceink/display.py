@@ -23,7 +23,11 @@ class Config:
     music_dir = _env("MUSIC_DIR", "/mnt/dietpi_userdata/Music")
     iface = _env("WIFI_IFACE", "wlan0")
     web_port = int(_env("WEB_PORT", "80"))
-    refresh = int(_env("REFRESH_SECONDS", "60"))
+    # Refresh fast while a download is in progress, slow when idle.
+    refresh_active = int(_env("REFRESH_ACTIVE_SECONDS", "60"))
+    refresh_idle = int(_env("REFRESH_IDLE_SECONDS", "180"))
+    # Companion endpoint reporting whether downloads are running (via Caddy).
+    activity_url = _env("ACTIVITY_URL", "http://127.0.0.1/api/activity")
     offline_poll = int(_env("OFFLINE_POLL_SECONDS", "15"))
     enable_ap = _env("PROVISION_ENABLE_AP", "0") == "1"
     ap_ssid = _env("AP_SSID", "musicEink-setup")
@@ -39,7 +43,19 @@ def _status_signature(st: dict) -> tuple:
         st["ip"], st["tracks"], st["disk_free"] >> 27,  # ~128MB buckets
         round(st["cpu"], -1), round(st["mem"], -1),
         int(st["temp"]) if st["temp"] is not None else -1,
+        st.get("downloading", 0),
     )
+
+
+def _fetch_activity(url: str) -> dict | None:
+    """Ask the companion whether downloads are in progress. Best-effort."""
+    import json
+    import urllib.request
+    try:
+        with urllib.request.urlopen(url, timeout=3) as resp:
+            return json.loads(resp.read().decode())
+    except Exception:
+        return None
 
 
 class Daemon:
@@ -85,9 +101,12 @@ class Daemon:
         if status.is_connected(self.cfg.iface):
             self._stop_provisioning()
             st = status.gather(self.cfg.music_dir, self.cfg.iface)
+            act = _fetch_activity(self.cfg.activity_url) or {}
+            st["downloading"] = int(act.get("running", 0)) + int(act.get("queued", 0))
             img = screens.render_status(self.panel, st, self.cfg.web_port)
             self._maybe_show(img, _status_signature(st))
-            return self.cfg.refresh
+            return (self.cfg.refresh_active if act.get("active")
+                    else self.cfg.refresh_idle)
         ap_active = self._start_provisioning()
         img = screens.render_provisioning(self.panel, self.cfg.ap_ssid,
                                           self.cfg.ap_pass, self.cfg.portal_ip,

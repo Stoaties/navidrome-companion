@@ -47,7 +47,9 @@ python3 -m musiceink.display --once
 | `MUSIC_DIR` | `/mnt/dietpi_userdata/Music` | Counted for the track total & free space |
 | `WIFI_IFACE` | `wlan0` | Interface used for IP / connectivity |
 | `WEB_PORT` | `80` | Port put in the web-UI QR code |
-| `REFRESH_SECONDS` | `60` | Status refresh interval |
+| `REFRESH_ACTIVE_SECONDS` | `60` | Refresh interval while a download runs |
+| `REFRESH_IDLE_SECONDS` | `180` | Refresh interval when idle |
+| `ACTIVITY_URL` | `http://127.0.0.1/api/activity` | Companion endpoint polled for download activity |
 | `PROVISION_ENABLE_AP` | `0` | **Off by default** — see safety note |
 | `AP_SSID` / `AP_PASS` | `musicEink-setup` / `musicsetup` | Setup hotspot |
 | `PORTAL_IP` | `192.168.4.1` | Captive-portal address |
