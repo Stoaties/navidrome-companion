@@ -26,15 +26,17 @@ if [ -z "$tz" ]; then
   exit 0
 fi
 
-cur=$(timedatectl show -p Timezone --value 2>/dev/null)
+cur=$(cat /etc/timezone 2>/dev/null || readlink /etc/localtime | sed 's#.*/zoneinfo/##')
 if [ "$tz" = "$cur" ]; then
   log "timezone already $tz"
   exit 0
 fi
-if timedatectl set-timezone "$tz"; then
-  log "timezone set to $tz (was ${cur:-unknown})"
-  # Nudge the display so its clock updates without waiting for a reboot.
-  systemctl restart musiceink-display.service 2>/dev/null || true
-else
-  log "failed to set timezone to $tz"
-fi
+
+# Set it directly via the zoneinfo symlink (what glibc reads) so it works even
+# on minimal systems without systemd-timedated/D-Bus; timedatectl is a bonus.
+ln -sf "/usr/share/zoneinfo/$tz" /etc/localtime
+echo "$tz" > /etc/timezone
+timedatectl set-timezone "$tz" 2>/dev/null || true
+log "timezone set to $tz (was ${cur:-unknown})"
+# Nudge the display so its clock updates without waiting for a reboot.
+systemctl restart musiceink-display.service 2>/dev/null || true
