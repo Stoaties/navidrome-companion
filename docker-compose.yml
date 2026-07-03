@@ -30,7 +30,9 @@ services:
       - NAVIDROME_INTERNAL_URL=http://navidrome:4533
     volumes:
       - ./data/companion:/data
-      - music:/music
+      # Music lives on a host path so it can sit on a USB drive and be shared
+      # with other tools (e.g. the e-ink status display). Defaults to ./music.
+      - ${MUSIC_PATH:-./music}:/music
     networks:
       - internal
 
@@ -46,12 +48,11 @@ services:
       - ND_ENABLETRANSCODINGCONFIG=true
     volumes:
       - ./data/navidrome:/data
-      - music:/music:ro
+      - ${MUSIC_PATH:-./music}:/music:ro
     networks:
       - internal
 
 volumes:
-  music:
   caddy_data:
   caddy_config:
 
