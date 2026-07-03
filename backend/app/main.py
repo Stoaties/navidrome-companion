@@ -56,6 +56,11 @@ def _startup():
         caddy.push_config()
     except Exception:  # noqa: BLE001 - Caddy may not be up yet; ignore.
         pass
+    # Re-queue any download interrupted by a restart (skip-existing keeps it cheap).
+    try:
+        downloader.resume_interrupted()
+    except Exception:  # noqa: BLE001 - never block startup on this.
+        pass
 
 
 # ----------------------------------------------------------------- auth ---

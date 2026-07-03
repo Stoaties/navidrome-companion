@@ -151,13 +151,20 @@ def _yt_search_cmd(out_tmpl: str, query: str, dur_s: int) -> list[str]:
         lo, hi = max(dur_s - 25, 0), dur_s + 25
         return base + [
             "--match-filter", f"duration>={lo} & duration<={hi}",
-            "--max-downloads", "1", f"ytsearch5:{query}",
+            "--max-downloads", "1", f"ytsearch3:{query}",
         ]
     return base + [f"ytsearch1:{query}"]
 
 
 def _download_track(track: "spotify.Track", album: str, job_id: str) -> bool:
     """Find and download one track's audio from YouTube. Returns success."""
+    dest_dir = os.path.join(MUSIC_DIR, _sanitize(track.artist or "Unknown Artist"))
+    dest = os.path.join(dest_dir, _sanitize(track.title) + ".mp3")
+    # Skip tracks we already have — makes re-running a playlist (e.g. after a
+    # restart) cheap and idempotent instead of re-downloading everything.
+    if os.path.exists(dest):
+        db.append_job_log(job_id, "   already downloaded; skipping\n")
+        return True
     dur_s = track.duration_ms // 1000
     with tempfile.TemporaryDirectory() as tmp:
         out_tmpl = os.path.join(tmp, "%(id)s.%(ext)s")
@@ -173,9 +180,7 @@ def _download_track(track: "spotify.Track", album: str, job_id: str) -> bool:
         if not mp3s:
             return False
 
-        dest_dir = os.path.join(MUSIC_DIR, _sanitize(track.artist or "Unknown Artist"))
         os.makedirs(dest_dir, exist_ok=True)
-        dest = os.path.join(dest_dir, _sanitize(track.title) + ".mp3")
         shutil.move(mp3s[0], dest)
         _tag_mp3(dest, track, album)
         return True
@@ -257,6 +262,21 @@ def _ensure_worker():
         if not _worker_started:
             threading.Thread(target=_worker, daemon=True).start()
             _worker_started = True
+
+
+def resume_interrupted():
+    """Re-queue jobs left unfinished by a restart/crash.
+
+    The work queue lives in memory, so a restart orphans any running/queued job
+    (leaving it stuck as 'running'). Re-queue them on startup; already-downloaded
+    tracks are skipped, so resuming a playlist is cheap.
+    """
+    _ensure_worker()
+    for row in db.list_jobs(100):
+        if row["status"] in ("running", "queued", "paused"):
+            db.set_job_status(row["id"], "queued")
+            db.append_job_log(row["id"], "\n[resumed after restart]\n")
+            _work.put(row["id"])
 
 
 def is_spotify_url(url: str) -> bool:
