@@ -1,0 +1,9 @@
+# For non-Debian installs (pip). On DietPi/Raspberry Pi OS install the apt
+# equivalents instead — see install.sh — which ship prebuilt ARM wheels.
+Pillow
+qrcode
+psutil
+spidev
+lgpio
+gpiozero
+numpy

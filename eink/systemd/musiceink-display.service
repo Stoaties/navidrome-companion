@@ -1,0 +1,15 @@
+[Unit]
+Description=musicEink e-ink status display
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/musiceink.env
+WorkingDirectory=/opt/musiceink
+ExecStart=/usr/bin/python3 -m musiceink.display
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
