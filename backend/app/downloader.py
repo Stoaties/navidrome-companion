@@ -98,6 +98,17 @@ def _run(cmd: list[str], job_id: str, quiet: bool = False,
 
 
 # ---------------------------------------------------------------- direct URL ---
+# Bound every network operation so a stalled connection (common on flaky Wi-Fi)
+# can't hang a download for minutes — abort and retry instead. This is the main
+# lever for download throughput on a Pi Zero 2W.
+_YT_ROBUST = [
+    "--socket-timeout", "20",
+    "--retries", "3",
+    "--fragment-retries", "3",
+    "--extractor-retries", "2",
+]
+
+
 def _yt_dlp_cmd(url: str) -> list[str]:
     return [
         "yt-dlp",
@@ -106,6 +117,7 @@ def _yt_dlp_cmd(url: str) -> list[str]:
         "--audio-quality", "0",
         "--embed-metadata",
         "--embed-thumbnail",
+        *_YT_ROBUST,
         "--no-playlist" if "list=" not in url else "--yes-playlist",
         "-o", "%(uploader)s/%(title)s.%(ext)s",
         url,
@@ -143,7 +155,7 @@ def _tag_mp3(path: str, track: "spotify.Track", album: str) -> None:
 def _yt_search_cmd(out_tmpl: str, query: str, dur_s: int) -> list[str]:
     base = [
         "yt-dlp", "-x", "--audio-format", "mp3", "--audio-quality", "0",
-        "--no-playlist", "--embed-thumbnail", "-o", out_tmpl,
+        "--no-playlist", "--embed-thumbnail", *_YT_ROBUST, "-o", out_tmpl,
     ]
     if dur_s > 0:
         # Prefer a hit whose length matches the Spotify track (avoids picking
