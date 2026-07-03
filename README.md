@@ -16,6 +16,9 @@ lets you:
 - 🔒 **Authentication on every web interface** — the management app is fully
   gated, and Navidrome has its own login. A default admin account is seeded on
   first boot.
+- 🖥️ **Optional e-ink status display** — a Waveshare 2.13" HAT shows the local
+  IP (with a QR to open the web UI), free space, track count and CPU/temp, and
+  a Wi-Fi onboarding QR when offline. See [`eink/`](eink/).
 
 Navidrome serves the actual library and streaming; the companion app handles
 acquisition and configuration.
