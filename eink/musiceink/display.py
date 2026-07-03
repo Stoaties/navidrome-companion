@@ -23,7 +23,7 @@ class Config:
     music_dir = _env("MUSIC_DIR", "/mnt/dietpi_userdata/Music")
     iface = _env("WIFI_IFACE", "wlan0")
     web_port = int(_env("WEB_PORT", "80"))
-    refresh = int(_env("REFRESH_SECONDS", "120"))
+    refresh = int(_env("REFRESH_SECONDS", "60"))
     offline_poll = int(_env("OFFLINE_POLL_SECONDS", "15"))
     enable_ap = _env("PROVISION_ENABLE_AP", "0") == "1"
     ap_ssid = _env("AP_SSID", "musicEink-setup")
