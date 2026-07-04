@@ -15,15 +15,49 @@
     <label>Let's Encrypt email (optional)
       <input name="acme_email" value="{{ acme_email }}" placeholder="you@example.com">
     </label>
+    <input type="hidden" name="spotify_client_id" value="{{ spotify_client_id }}">
 
     <button type="submit">Save settings</button>
   </form>
 
   <h2 style="margin-top:1.4rem">Spotify</h2>
-  <p class="muted">No setup needed. Paste a <strong>public</strong> Spotify
-    playlist, album or track link on the dashboard — the track list is read from
-    Spotify's public page and each track's audio is fetched from YouTube and
-    tagged. Private playlists aren't accessible; set them to public first.</p>
+  <p class="muted">No setup needed for most links: paste a <strong>public</strong>
+    Spotify playlist, album or track on the dashboard and the track list is read
+    from Spotify's public page, then each track's audio is fetched from YouTube
+    and tagged. Private playlists aren't accessible; set them to public first.</p>
+  <p class="muted">The public page only lists the <strong>first 100 tracks</strong>
+    of a playlist. To import bigger playlists in full, create a free app at
+    <a href="https://developer.spotify.com/dashboard" target="_blank"
+       rel="noreferrer">developer.spotify.com/dashboard</a> and paste its
+    Client ID and Secret below — they're used read-only to page through the whole
+    list.</p>
+  <form method="post" action="/settings">
+    <input type="hidden" name="public_domain" value="{{ domain }}">
+    <input type="hidden" name="acme_email" value="{{ acme_email }}">
+    <label>Spotify Client ID
+      <input name="spotify_client_id" value="{{ spotify_client_id }}"
+             placeholder="(optional — for playlists over 100 tracks)">
+    </label>
+    <label>Spotify Client Secret
+      <input name="spotify_client_secret" type="password"
+             placeholder="{{ '•••••• saved — leave blank to keep' if spotify_has_secret else 'client secret' }}">
+    </label>
+    <button type="submit">Save Spotify keys</button>
+  </form>
+
+  <h2 style="margin-top:1.4rem">Metadata (MusicBrainz)</h2>
+  <p class="muted">Look up each downloaded track in the free
+    <a href="https://musicbrainz.org" target="_blank" rel="noreferrer">MusicBrainz</a>
+    database to fill in the canonical track, artist and <strong>album</strong> name
+    (Spotify playlists don't provide a per-track album) plus MusicBrainz IDs, so
+    Navidrome groups albums correctly and can show artist art. Adds ~1-2s per
+    track (MusicBrainz rate-limits lookups), and only tags an album when it's
+    confidently a studio release. Turn off if you'd rather keep imports fastest.</p>
+  <form method="post" action="/settings/library">
+    <label class="checkbox"><input type="checkbox" name="enrich_musicbrainz"
+        value="1" {{ "checked" if enrich_mb else "" }}> Enrich tags with MusicBrainz</label>
+    <button type="submit">Save</button>
+  </form>
 </div>
 
 <div class="card">

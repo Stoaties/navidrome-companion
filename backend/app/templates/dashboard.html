@@ -20,6 +20,24 @@
     while — watch progress in the job log below.</p>
 </div>
 
+<div class="card">
+  <h2>Import a track list</h2>
+  <p class="muted">Paste a whole playlist — <strong>one track per line</strong> —
+    to sidestep the 100-track limit on Spotify playlist links. Lines can be
+    Spotify <strong>track links</strong>, <code>spotify:track:…</code> URIs, or
+    plain <code>Artist - Title</code> text. Tip: in the Spotify app open the
+    playlist, select all tracks (<code>Ctrl/Cmd+A</code>), copy
+    (<code>Ctrl/Cmd+C</code>) and paste here — it copies every track, not just
+    the first 100.</p>
+  <form method="post" action="/download-list">
+    <textarea name="tracks" rows="6" required
+      placeholder="https://open.spotify.com/track/....
+https://open.spotify.com/track/....
+Daft Punk - Harder Better Faster Stronger"></textarea>
+    <button type="submit">Download list</button>
+  </form>
+</div>
+
 <h2>Recent jobs</h2>
 <table class="jobs" id="jobs">
   <thead>
@@ -29,7 +47,7 @@
     {% for job in jobs %}
     <tr data-id="{{ job.id }}">
       <td>{{ job.kind }}</td>
-      <td class="target">{{ job.target }}</td>
+      <td class="target">{% if job.kind == "list" %}Pasted track list{% else %}{{ job.target }}{% endif %}</td>
       <td><span class="status {{ job.status }}">{{ job.status }}</span>
         <div class="result">{{ job.result or "" }}</div></td>
       <td class="actions"></td>

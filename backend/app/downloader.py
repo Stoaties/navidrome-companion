@@ -25,7 +25,7 @@ import threading
 import uuid
 from urllib.parse import urlparse
 
-from . import db, spotify
+from . import db, musicbrainz, spotify
 
 MUSIC_DIR = os.environ.get("MUSIC_DIR", "/music")
 
@@ -130,8 +130,15 @@ def _sanitize(name: str) -> str:
     return name[:180] or "unknown"
 
 
-def _tag_mp3(path: str, track: "spotify.Track", album: str) -> None:
-    """Best-effort ID3 tagging so Navidrome shows clean artist/title/album."""
+def _tag_mp3(path: str, track: "spotify.Track", album: str,
+             match: "musicbrainz.Match | None" = None) -> None:
+    """Best-effort ID3 tagging so Navidrome shows clean artist/title/album.
+
+    When a MusicBrainz ``match`` is supplied, its canonical title/artist/album
+    and MusicBrainz IDs are written so Navidrome groups releases correctly and
+    can fetch artist art. A Spotify album name (from an album job) still wins for
+    the album tag, since it's authoritative for that specific release.
+    """
     try:
         from mutagen.easyid3 import EasyID3
         from mutagen.mp3 import MP3
@@ -142,11 +149,23 @@ def _tag_mp3(path: str, track: "spotify.Track", album: str) -> None:
             mp3.add_tags()
             mp3.save()
             audio = EasyID3(path)
-        audio["title"] = track.title
-        if track.artist:
-            audio["artist"] = track.artist
+        audio["title"] = match.title if match and match.title else track.title
+        artist = (match.artist if match and match.artist else track.artist)
+        if artist:
+            audio["artist"] = artist
+        album = album or (match.album if match else "")
         if album:
             audio["album"] = album
+        if match:
+            # EasyID3 registers these MusicBrainz keys by default; guard anyway.
+            for key, val in (("musicbrainz_trackid", match.recording_mbid),
+                             ("musicbrainz_artistid", match.artist_mbid),
+                             ("musicbrainz_albumid", match.release_mbid)):
+                if val:
+                    try:
+                        audio[key] = val
+                    except Exception:  # noqa: BLE001 - key not registered
+                        pass
         audio.save()
     except Exception:  # noqa: BLE001 - yt-dlp already embedded basic metadata
         pass
@@ -160,10 +179,12 @@ def _yt_search_cmd(out_tmpl: str, query: str, dur_s: int) -> list[str]:
     if dur_s > 0:
         # Prefer a hit whose length matches the Spotify track (avoids picking
         # remixes, live versions, "sped up" edits, hour-long loops, etc.).
-        lo, hi = max(dur_s - 25, 0), dur_s + 25
+        # Search a wide pool and take the first match so a good hit buried below
+        # a lyric video / reaction clip is still found.
+        lo, hi = max(dur_s - 30, 0), dur_s + 30
         return base + [
             "--match-filter", f"duration>={lo} & duration<={hi}",
-            "--max-downloads", "1", f"ytsearch3:{query}",
+            "--max-downloads", "1", f"ytsearch8:{query}",
         ]
     return base + [f"ytsearch1:{query}"]
 
@@ -171,6 +192,25 @@ def _yt_search_cmd(out_tmpl: str, query: str, dur_s: int) -> list[str]:
 def _primary_artist(artist: str) -> str:
     """The main artist, dropping featured/collaborators (Spotify joins with ', ')."""
     return artist.split(",")[0].split("&")[0].split(" feat")[0].strip()
+
+
+# Parenthetical/bracket noise and trailing "- ... version" suffixes that hurt a
+# YouTube search more than they help ("(feat. X)", "(Official Video)",
+# "- Remastered 2011", "[Explicit]", "- Radio Edit", ...).
+_NOISE = re.compile(
+    r"\s*[\(\[][^)\]]*"
+    r"(feat\.?|ft\.?|official|video|audio|lyric|visualizer|remaster|"
+    r"explicit|deluxe|bonus|mono|stereo)"
+    r"[^)\]]*[\)\]]", re.I)
+_SUFFIX = re.compile(
+    r"\s*-\s*[^-]*?\b(remaster|remastered|version|edit|mix|"
+    r"single version|mono|stereo|live)\b.*$", re.I)
+
+
+def _clean_title(title: str) -> str:
+    """Strip decoration Spotify adds to titles so the YouTube search is tighter."""
+    cleaned = _SUFFIX.sub("", _NOISE.sub("", title)).strip(" -")
+    return cleaned or title
 
 
 def _download_track(track: "spotify.Track", album: str, job_id: str,
@@ -196,15 +236,24 @@ def _download_track(track: "spotify.Track", album: str, job_id: str,
         dest = f"{base} ({i}).mp3"
 
     # Progressive search: most specific first, then looser, so niche tracks
-    # (featured artists, odd punctuation) still get found instead of failing.
+    # (featured artists, odd punctuation, "Remastered" tags) still get found
+    # instead of failing. Duration-matched attempts run before the un-filtered
+    # fallbacks so we only grab an arbitrary result as a last resort.
     dur_s = track.duration_ms // 1000
+    title = track.title.strip()
+    clean = _clean_title(title)
     primary = _primary_artist(track.artist)
-    q_primary = f"{primary} {track.title}".strip()
-    attempts = [(track.query, dur_s)]
-    if q_primary and q_primary != track.query:
-        attempts.append((q_primary, dur_s))
-    attempts.append((q_primary or track.query, 0))
-    attempts.append((track.title.strip(), 0))
+    attempts: list[tuple[str, int]] = []
+    for q, d in [
+        (f"{track.artist} {title}".strip(), dur_s),   # full artists + full title
+        (f"{primary} {title}".strip(), dur_s),        # main artist + full title
+        (f"{primary} {clean}".strip(), dur_s),        # main artist + clean title
+        (f"{primary} {clean}".strip(), 0),            # ... without duration gate
+        (f"{primary} {title}".strip(), 0),
+        (clean, 0),                                   # title only, last resort
+    ]:
+        if q and (q, d) not in attempts:
+            attempts.append((q, d))
 
     with tempfile.TemporaryDirectory() as tmp:
         out_tmpl = os.path.join(tmp, "%(id)s.%(ext)s")
@@ -224,23 +273,23 @@ def _download_track(track: "spotify.Track", album: str, job_id: str,
         os.makedirs(dest_dir, exist_ok=True)
         shutil.move(mp3, dest)
         seen.add(dest)
-        _tag_mp3(dest, track, album)
+        match = None
+        if db.get_setting("enrich_musicbrainz", "1") == "1":
+            match = musicbrainz.lookup(track.title, track.artist,
+                                       track.duration_ms)
+            if match and match.album and not album:
+                db.append_job_log(job_id, f"   ↳ album: {match.album}\n")
+        _tag_mp3(dest, track, album, match)
         return True
 
 
-def _process_spotify(job_id: str, url: str) -> bool:
-    """Resolve a Spotify link and download each track. True if any succeeded."""
-    db.append_job_log(job_id, "Reading Spotify link via public embed page...\n")
-    resolved = spotify.resolve(url)
-    album = resolved.name if resolved.kind == "album" else ""
-    total = len(resolved.tracks)
-    db.append_job_log(
-        job_id, f"Found {resolved.kind} '{resolved.name}' — {total} track(s).\n")
-
+def _download_all(job_id: str, tracks: list, album: str) -> tuple[int, int, list]:
+    """Download every track in order, one at a time. Returns (ok, total, failed)."""
+    total = len(tracks)
     ok = 0
     seen: set = set()
     failed: list[str] = []
-    for i, track in enumerate(resolved.tracks, 1):
+    for i, track in enumerate(tracks, 1):
         with _lock:
             if job_id in _cancelled:
                 break
@@ -254,8 +303,13 @@ def _process_spotify(job_id: str, url: str) -> bool:
         except Exception as exc:  # noqa: BLE001 - one bad track shouldn't abort
             failed.append(track.title)
             db.append_job_log(job_id, f"   ! error: {exc}\n")
+    return ok, total, failed
 
-    summary = f"{ok}/{total} downloaded"
+
+def _finish(job_id: str, ok: int, total: int, failed: list,
+            extra: str = "") -> bool:
+    """Write the closing log line + one-line result summary. Returns ok>0."""
+    summary = f"{ok}/{total} downloaded" + extra
     if failed:
         db.append_job_log(
             job_id, f"\nFinished: {summary}. {len(failed)} not found:\n  - "
@@ -265,6 +319,73 @@ def _process_spotify(job_id: str, url: str) -> bool:
         db.append_job_log(job_id, f"\nFinished: {summary}.\n")
     db.set_job_result(job_id, summary[:250])
     return ok > 0
+
+
+def _process_spotify(job_id: str, url: str) -> bool:
+    """Resolve a Spotify link and download each track. True if any succeeded."""
+    db.append_job_log(job_id, "Reading Spotify link via public embed page...\n")
+    resolved = spotify.resolve(url)
+    album = resolved.name if resolved.kind == "album" else ""
+    total = len(resolved.tracks)
+    db.append_job_log(
+        job_id, f"Found {resolved.kind} '{resolved.name}' — {total} track(s) "
+        f"(via {resolved.source}).\n")
+    extra = ""
+    if resolved.truncated:
+        db.append_job_log(
+            job_id,
+            "  ! Spotify's public page only lists the first 100 tracks. To grab the\n"
+            "    whole playlist, use 'Import a track list' and paste every track.\n")
+        extra = " · only first 100 (paste a track list for the rest)"
+    ok, total, failed = _download_all(job_id, resolved.tracks, album)
+    return _finish(job_id, ok, total, failed, extra)
+
+
+def _parse_track_list(job_id: str, text: str) -> list:
+    """Turn pasted text into Tracks.
+
+    Each line is either a Spotify link/URI (resolved via the public embed — a
+    playlist or album link expands to its tracks, a track link yields one) or a
+    plain ``Artist - Title`` line (or a bare title) searched directly. Because we
+    resolve/search individual tracks, there is no 100-track playlist cap here.
+    """
+    lines = [r.strip() for r in text.splitlines()
+             if r.strip() and not r.strip().startswith("#")]
+    links = [l for l in lines
+             if is_spotify_url(l) or l.startswith("spotify:")]
+    if links:
+        db.append_job_log(
+            job_id, f"Resolving {len(links)} Spotify link(s) — this can take a "
+            "moment over slow Wi-Fi…\n")
+    tracks: list = []
+    done = 0
+    for line in lines:
+        if is_spotify_url(line) or line.startswith("spotify:"):
+            try:
+                tracks.extend(spotify.resolve(line).tracks)
+            except spotify.SpotifyError as exc:
+                db.append_job_log(job_id, f"   ! skipped {line}: {exc}\n")
+            done += 1
+            if done % 20 == 0:
+                db.append_job_log(job_id, f"   …resolved {done}/{len(links)}\n")
+        elif " - " in line:
+            artist, title = line.split(" - ", 1)
+            tracks.append(spotify.Track(title.strip(), artist.strip(), 0))
+        else:
+            tracks.append(spotify.Track(line, "", 0))
+    return tracks
+
+
+def _process_list(job_id: str, text: str) -> bool:
+    """Download a pasted track list (Spotify links/URIs or 'Artist - Title')."""
+    tracks = _parse_track_list(job_id, text)
+    if not tracks:
+        db.append_job_log(job_id, "No usable tracks found in the pasted list.\n")
+        db.set_job_result(job_id, "nothing to download")
+        return False
+    db.append_job_log(job_id, f"Parsed {len(tracks)} track(s) from the list.\n")
+    ok, total, failed = _download_all(job_id, tracks, "")
+    return _finish(job_id, ok, total, failed)
 
 
 # --------------------------------------------------------------- job pipeline ---
@@ -285,6 +406,8 @@ def _process(job_id: str):
     try:
         if job["kind"] == "spotify":
             success = _process_spotify(job_id, job["target"])
+        elif job["kind"] == "list":
+            success = _process_list(job_id, job["target"])
         else:
             success = _run(_yt_dlp_cmd(job["target"]), job_id) == 0
     except Exception as exc:  # noqa: BLE001 - surface any failure to the log

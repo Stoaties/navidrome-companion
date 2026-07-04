@@ -148,6 +148,17 @@ def download_url(request: Request, url: str = Form(...),
     return RedirectResponse("/", status_code=303)
 
 
+@app.post("/download-list")
+def download_list(request: Request, tracks: str = Form(...),
+                  user: str = Depends(require_user)):
+    # A pasted list of Spotify track links/URIs or "Artist - Title" lines.
+    # Downloaded track-by-track, so it has no 100-track playlist cap.
+    tracks = tracks.strip()
+    if tracks:
+        downloader.enqueue("list", tracks)
+    return RedirectResponse("/", status_code=303)
+
+
 # Kept for backwards compatibility; kind is auto-detected either way.
 @app.post("/spotify")
 def download_spotify(request: Request, url: str = Form(...),
@@ -226,6 +237,9 @@ def settings_page(request: Request, user: str = Depends(require_admin)):
             "user": user,
             "domain": db.get_setting("public_domain", ""),
             "acme_email": db.get_setting("acme_email", ""),
+            "spotify_client_id": db.get_setting("spotify_client_id", ""),
+            "spotify_has_secret": bool(db.get_setting("spotify_client_secret")),
+            "enrich_mb": db.get_setting("enrich_musicbrainz", "1") == "1",
             "users": db.list_users(),
             "msg": None,
         },
@@ -235,9 +249,15 @@ def settings_page(request: Request, user: str = Depends(require_admin)):
 @app.post("/settings")
 def save_settings(request: Request, public_domain: str = Form(""),
                   acme_email: str = Form(""),
+                  spotify_client_id: str = Form(""),
+                  spotify_client_secret: str = Form(""),
                   user: str = Depends(require_admin)):
     db.set_setting("public_domain", public_domain.strip())
     db.set_setting("acme_email", acme_email.strip())
+    db.set_setting("spotify_client_id", spotify_client_id.strip())
+    # Blank secret means "leave unchanged" so we don't wipe it on every save.
+    if spotify_client_secret.strip():
+        db.set_setting("spotify_client_secret", spotify_client_secret.strip())
     ok, message = caddy.push_config()
     msg = ("ok" if ok else "error", message)
     return templates.TemplateResponse(
@@ -247,10 +267,21 @@ def save_settings(request: Request, public_domain: str = Form(""),
             "user": user,
             "domain": public_domain.strip(),
             "acme_email": acme_email.strip(),
+            "spotify_client_id": spotify_client_id.strip(),
+            "spotify_has_secret": bool(db.get_setting("spotify_client_secret")),
+            "enrich_mb": db.get_setting("enrich_musicbrainz", "1") == "1",
             "users": db.list_users(),
             "msg": msg,
         },
     )
+
+
+@app.post("/settings/library")
+def save_library_settings(request: Request, enrich_musicbrainz: str = Form(""),
+                          user: str = Depends(require_admin)):
+    # Own route (own form) so this checkbox's absence is unambiguous.
+    db.set_setting("enrich_musicbrainz", "1" if enrich_musicbrainz else "0")
+    return RedirectResponse("/settings", status_code=303)
 
 
 @app.post("/users/add")

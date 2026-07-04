@@ -36,11 +36,16 @@ h2 { font-size: 1.15rem; margin-top: 0; }
 }
 .card.auth { max-width: 380px; margin: 8vh auto 0; }
 label { display: block; margin: 0.6rem 0; font-size: 0.9rem; color: var(--muted); }
-input[type=text], input:not([type]), input[type=password], input[type=email] {
+input[type=text], input:not([type]), input[type=password], input[type=email],
+textarea {
   width: 100%; margin-top: 0.3rem; padding: 0.6rem 0.7rem;
   background: var(--panel-2); border: 1px solid var(--border);
   border-radius: 8px; color: var(--text); font-size: 0.95rem;
 }
+textarea { font-family: ui-monospace, Menlo, Consolas, monospace;
+  resize: vertical; line-height: 1.4; }
+code { background: var(--panel-2); padding: 0.05rem 0.35rem; border-radius: 5px;
+  font-size: 0.85em; }
 button {
   margin-top: 0.7rem; padding: 0.6rem 1.1rem; border: none; cursor: pointer;
   background: var(--accent); color: white; border-radius: 8px;
