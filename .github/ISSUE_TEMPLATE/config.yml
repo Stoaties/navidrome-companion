@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / help
+    url: https://github.com/Stoaties/navidrome-companion/discussions
+    about: Ask usage questions or share setups here rather than opening an issue.
+  - name: Navidrome (upstream music server)
+    url: https://github.com/navidrome/navidrome/issues
+    about: Report streaming/indexing/library issues to Navidrome directly.
+  - name: yt-dlp (upstream downloader)
+    url: https://github.com/yt-dlp/yt-dlp/issues
+    about: Report download/extractor problems to yt-dlp directly.

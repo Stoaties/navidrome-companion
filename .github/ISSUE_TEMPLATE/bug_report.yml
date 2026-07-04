@@ -1,0 +1,63 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! Please fill in as much as you
+        can — details make it far easier to reproduce and fix.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+      placeholder: When I import a track list, ...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to the dashboard
+        2. Paste ...
+        3. Click Download list
+        4. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Job log / container logs
+      description: >
+        Paste the relevant job log (expand a job on the dashboard) and/or
+        `docker logs nc-companion`. Redact anything private.
+      render: text
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware / OS
+      placeholder: "Raspberry Pi Zero 2W, DietPi (arm64)"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Output of `git rev-parse --short HEAD`, or the image tag.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I'm on the latest `main`.
+          required: true
+        - label: >
+            This is a bug in navidrome-companion itself, not an upstream project
+            (Navidrome, yt-dlp, Caddy).
+          required: true
